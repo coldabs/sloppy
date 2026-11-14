@@ -12,7 +12,15 @@ import {
 } from '../lib/rules'
 import { siteGroupMeta, siteRules, type SiteGroup } from '../lib/siteRules'
 
-const groupOrder: GroupId[] = ['voice', 'claims', 'actions', 'format', 'structure']
+const groupOrder: GroupId[] = [
+  'voice',
+  'claims',
+  'actions',
+  'format',
+  'structure',
+  'diversity',
+  'substance',
+]
 const siteGroupOrder: SiteGroup[] = ['structure', 'style']
 
 export function Method() {
