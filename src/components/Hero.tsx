@@ -1,4 +1,5 @@
-import { groupMeta, rules } from '../lib/rules'
+import { rules } from '../lib/rules'
+import { siteRules } from '../lib/siteRules'
 
 export function Hero() {
   return (
@@ -26,12 +27,12 @@ export function Hero() {
         <p className="eyebrow">Spec</p>
         <dl className="spec-list">
           <div>
-            <dt>Rules</dt>
+            <dt>Copy rules</dt>
             <dd>{rules.length}</dd>
           </div>
           <div>
-            <dt>Groups</dt>
-            <dd>{Object.keys(groupMeta).length}</dd>
+            <dt>Site rules</dt>
+            <dd>{siteRules.length}</dd>
           </div>
           <div>
             <dt>Upload</dt>

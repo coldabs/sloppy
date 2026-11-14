@@ -75,6 +75,11 @@ export const verdictBands = [
 export const verdictFor = (score: number): string =>
   verdictBands.find((band) => score >= band.min)?.label ?? 'Industrial slop'
 
+export const scoreFromPenalty = (penalty: number): number =>
+  penalty <= 0
+    ? 100
+    : Math.max(0, Math.min(100, Math.round(100 * Math.exp(-penalty / SCORE_DECAY))))
+
 const buildExcerpt = (text: string, start: number, end: number) => {
   const from = Math.max(0, start - EXCERPT_PAD)
   const to = Math.min(text.length, end + EXCERPT_PAD)
@@ -144,10 +149,7 @@ export const analyze = (text: string): Analysis => {
       a.rule.label.localeCompare(b.rule.label),
   )
 
-  const score =
-    penalty === 0
-      ? 100
-      : Math.max(0, Math.min(100, Math.round(100 * Math.exp(-penalty / SCORE_DECAY))))
+  const score = scoreFromPenalty(penalty)
 
   return {
     score,

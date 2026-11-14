@@ -1,20 +1,25 @@
 # sloppy
 
-A local pattern checker for machine-made copy. Paste a draft, get a score
-from 0 to 100, and see every phrase that matched a rule, marked in place.
+A local pattern checker for machine-made copy and machine-made websites.
+Paste a draft or point it at a page, get a score from 0 to 100, and see every
+pattern that matched.
 
-There is no language model and no network request. The scan is a fixed list
-of patterns with visible weights and a visible formula, so the same draft
-always gets the same score, and every score can be explained.
+There is no language model. The scan is a fixed list of patterns, CSS signals,
+and visible weights with a visible formula, so the same input always gets the
+same score, and every score can be explained.
 
 ## Contents
 
 - [Why this exists](#why-this-exists)
-- [What it checks](#what-it-checks)
+- [Two modes](#two-modes)
 - [Run it](#run-it)
 - [How the score works](#how-the-score-works)
+- [Website fetch guards](#website-fetch-guards)
+- [Demo site](#demo-site)
+- [Project layout](#project-layout)
 - [Privacy](#privacy)
 - [Limits](#limits)
+- [Accessibility](#accessibility)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -31,41 +36,70 @@ yours, and the judgement stays yours too. A score is a starting point for an
 edit, not a verdict on the writing. If a flag feels wrong, it probably is.
 Trust your ear over the score.
 
-## What it checks
+## Two modes
 
-Fifteen rules, in four groups. The full list, with the wording for each rule
-and its suggested fix, is in [docs/METHOD.md](docs/METHOD.md), and the page
-renders that same list from the same data, so the documentation and the
-scanner cannot drift apart.
+### Copy
+
+Paste a landing page, a launch post, or any text. The scanner runs fifteen
+rules over the draft and marks each hit in place.
 
 | Group | What it looks for |
 | --- | --- |
-| Voice | Hype vocabulary and stock cadences, including the em dash |
-| Claims | Numbers and credentials without proof |
+| Voice | Hype vocabulary, AI tell phrases, and stock cadences, including the em dash |
+| Claims | Numbers and credentials without proof, vague superlatives |
 | Actions | Labels that hide what the click actually does |
 | Format | Template typographic habits, such as long all-caps runs |
+
+The full list, with the wording for each rule and its suggested fix, is in
+[docs/METHOD.md](docs/METHOD.md), and the page renders that same list from the
+same data, so the documentation and the scanner cannot drift apart.
 
 A draft of up to 20,000 characters can be scanned. A deliberately sloppy
 sample is built in, under "Load a sloppy example", for anyone who wants to
 see the tool work before pasting their own copy.
 
+### Website
+
+Enter a public URL. The local server fetches the HTML and same-origin
+stylesheets, and the browser analyzes three things:
+
+1. **Structure:** dead links, anchors with no target, unnamed controls, missing
+   image alts, heading order, template section stacks, trust logo bars, forced
+   three-step explainers, manufactured urgency, shipped lorem ipsum, skeleton
+   blocks, template FAQ questions, "most popular" pricing badges, and page title
+   or meta description problems.
+2. **Style signals:** repeated pill radii, glass blur on several surfaces,
+   radial orbs, blue-purple palettes, repeating background lines, oversized
+   shadows, and glow clusters. Each signal is counted, not judged from one
+   declaration.
+3. **Copy:** the visible page text runs through the same fifteen copy rules,
+   with the matched text marked.
+
+The website rules live in `src/lib/siteRules.ts` and the copy rules in
+`src/lib/rules.ts`. The Method section renders both lists from that same data.
+
 ## Run it
 
 ```sh
 npm install
-npm run dev
+npm run dev        # dev server with the local fetch API on port 5173
 ```
 
-Then open http://localhost:5173 in a browser.
+Then open http://127.0.0.1:5173 in a browser.
 
 Other scripts:
 
 ```sh
 npm run build      # typecheck and production build
-npm run preview    # serve the production build
-npm test           # run the analyzer tests with Vitest
+npm start          # serve the build and API on port 4173
+npm test           # Vitest: copy rules, site rules, URL guards
 npm run lint       # Oxlint
+npm run typecheck  # TypeScript only
 ```
+
+`npm run dev` and `npm start` both run `server.mjs`: Vite middleware in dev, a
+static server plus API in production. `npm run preview` is an alias for
+`npm start`.
 
 ## How the score works
 
@@ -97,52 +131,99 @@ named report, study, survey, or audit together with a year. The full
 method, including every rule, its weight, and its fix, is in
 [docs/METHOD.md](docs/METHOD.md).
 
-## Privacy
+Website findings use the same severity weights and the same decay curve.
+Repeated occurrences of a structure or style signal are capped per rule, so
+one noisy declaration cannot decide a whole page.
 
-The draft never leaves the tab. There is no analytics, no account, and no
-API call. Everything is computed in the browser by `analyze()` in
-`src/lib/analyzer.ts`.
+## Website fetch guards
 
-## Limits
+The API only exists to let the browser read pages it cannot fetch directly.
+It is deliberately narrow:
 
-This is a pattern matcher, not a critic. It cannot tell whether a sentence
-is true, useful, or clear. It only sees text, so layout, images, motion,
-and code are out of reach.
+- http and https only, ports 80 and 443 only
+- hostnames resolved first; private, loopback, link-local, and reserved
+  addresses are rejected
+- redirects followed manually, at most 3, with the same checks on every hop
+- 10 second timeout, 3 MB HTML cap, 512 KB per stylesheet
+- at most 5 same-origin stylesheets per page
+- no cookies, no credentials, no stored pages
 
-False positives are normal. A common verb can be flagged even when it is
-the right word for the sentence. A high score is not proof of quality, and
-a low score is not proof of slop. Known gaps, including ways the fixed list
-can be worked around, are written down rather than hidden. See the audit
-notes in the repository history if they are kept with the project.
+For local development and tests, `SLOPPY_ALLOW_PRIVATE=1` lifts the private
+address and port restrictions for that run only. Never enable it on a shared
+machine.
 
-The page targets WCAG AA contrast, uses native buttons and links, keeps
-visible focus rings, supports keyboard filtering, labels the scan regions
-with live status roles, and respects `prefers-reduced-motion`.
+## Demo site
+
+The Website panel has a "Scan the bundled demo site" button. It loads a fixture
+from `public/demo-site/`, clearly labeled as a demo, which fails most of the
+structure, style, and copy checks. It exists to exercise the analyzer without a
+network request.
 
 ## Project layout
 
 ```
+server.mjs             dev and production server entry
+server/
+  fetch.mjs            fetch guards, redirects, size limits, CSS proxy
+  fetch.test.ts        URL guard tests
 src/
   components/
-    Detector.tsx      input, validation, scan trigger, states
-    Method.tsx        rule ledger, scoring, limits
-    ResultPanel.tsx   score, filters, findings, marked copy
-    Hero.tsx          opening section and spec panel
-    Masthead.tsx      wordmark and section navigation
-    Footer.tsx        closing statement
+    Detector.tsx       mode tabs and panel routing
+    CopyChecker.tsx    draft input, validation, scan trigger, states
+    SiteChecker.tsx    URL input, fetch, stylesheet loading, states
+    ResultPanel.tsx    copy score, filters, findings, marked copy
+    SiteResultPanel.tsx page facts, structure, style, copy results
+    FindingList.tsx    shared finding rows
+    Method.tsx         rule ledger, scoring, limits
+    Hero.tsx           opening section and spec panel
+    Masthead.tsx       wordmark and section navigation
+    Footer.tsx         closing statement
   lib/
-    analyzer.ts       scan loop, scoring, excerpt and highlight building
-    rules.ts          rule definitions, lexicons, weights, group metadata
-    analyzer.test.ts  rule and scoring tests
-    exampleDraft.ts   deliberately sloppy sample text
-  index.css           the whole visual system
+    analyzer.ts        copy scan loop, density scoring, highlights
+    normalize.ts       lookalike, invisible character, and dash folding
+    rules.ts           copy rules, lexicons, weights, group metadata
+    siteAnalyzer.ts    site scoring and result assembly
+    siteRules.ts       DOM and CSS rule implementations
+    exampleDraft.ts    deliberately sloppy sample text
+    *.test.ts          rule and scoring tests
+  index.css            the whole visual system
+public/
+  demo-site/           labeled fixture page and styles
+docs/
+  METHOD.md            full rule reference and scoring method
 ```
+
+## Privacy
+
+Copy mode never leaves the tab. Website mode sends the URL to the local server
+on your machine, which fetches the page directly. No analytics, no account, no
+third-party proxy, and no stored pages. Analysis always runs in the browser.
+
+## Limits
+
+Copy mode is a pattern matcher, not a critic. It cannot tell whether a sentence
+is true, useful, or clear. False positives are normal. A common verb can be
+flagged even when it is the right word for the sentence. A high score is not
+proof of quality, and a low score is not proof of slop. Known gaps, including
+ways the fixed list can be worked around, are written down rather than hidden.
+
+Website mode reads a static fetch. It cannot see JavaScript-rendered content,
+computed styles, hover states, animation, responsive layout, or any page behind
+a login. Style checks count declarations in fetched CSS and inline styles; they
+do not know which element a declaration applies to.
+
+## Accessibility
+
+The page targets WCAG AA contrast, uses native buttons and links, keeps
+visible focus rings, supports keyboard tabs and filtering, labels the scan
+regions with live status roles, and respects `prefers-reduced-motion`.
 
 ## Stack
 
-React 19, TypeScript, Vite, Vitest, Oxlint. No UI framework and no icon
-pack. The look is a Swiss poster: paper, ink, and one lime accent, in a
-fixed light theme.
+React 19, TypeScript, Vite, Vitest, happy-dom, Oxlint, and Node's built-in HTTP
+and fetch. No UI framework, no icon pack, and no runtime dependency for the
+server. The look is a Swiss poster: paper, ink, and one lime accent, in a fixed
+light theme.
 
 ## Contributing
 

@@ -6,6 +6,11 @@ ledger from the same data, so this document and the scanner cannot drift
 apart. If they ever disagree, the code is right and this document needs
 fixing.
 
+This document covers copy mode. Website mode checks fetched markup and CSS
+with the rules in `src/lib/siteRules.ts`. It uses the same severity weights
+and the same decay curve, with repeated structure and style signals capped
+per rule. See the README for the fetch guards and the static-analysis limits.
+
 ## Scoring
 
 1. Each rule is weighted by severity: high 15, medium 9, low 4, and

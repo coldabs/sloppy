@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { buildMarkedSegments, type Analysis } from '../lib/analyzer'
-import { rules, severityLabel, type Severity } from '../lib/rules'
+import { rules, type Severity } from '../lib/rules'
+import { FindingList } from './FindingList'
 
 type Status = 'idle' | 'analyzing' | 'done' | 'error'
 type Filter = 'all' | Severity
@@ -142,6 +143,8 @@ export function ResultPanel({
         </li>
       </ul>
 
+      <h3 className="result__section-title">Findings</h3>
+
       <div className="filters" role="group" aria-label="Filter findings by severity">
         {filterOptions.map((option) => {
           const count =
@@ -165,33 +168,21 @@ export function ResultPanel({
           No findings at this severity. Try another filter.
         </p>
       ) : (
-        <ul className="findings">
-          {visibleGroups.map(({ rule, hits: ruleFindings }) => (
-            <li className="finding" key={rule.id}>
-              <div className="finding__head">
-                <span className={`tag tag--${rule.severity}`}>
-                  {severityLabel[rule.severity]}
-                </span>
-                <h3 className="finding__title">{rule.label}</h3>
-                <span className="finding__count">
-                  {ruleFindings.length}{' '}
-                  {ruleFindings.length === 1 ? 'hit' : 'hits'}
-                </span>
-              </div>
-              <p className="finding__excerpt">{ruleFindings[0].excerpt}</p>
-              {ruleFindings.length > 1 ? (
-                <p className="finding__more">
-                  Plus {ruleFindings.length - 1} more of the same in this draft.
-                </p>
-              ) : null}
-              <p className="finding__note">{rule.note}</p>
-              <p className="finding__fix">
-                <span className="finding__fix-label">Fix</span>
-                {rule.fix}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <FindingList
+          items={visibleGroups.map(({ rule, hits: ruleFindings }) => ({
+            key: rule.id,
+            label: rule.label,
+            severity: rule.severity,
+            note: rule.note,
+            fix: rule.fix,
+            excerpt: ruleFindings[0].excerpt,
+            count: ruleFindings.length,
+            more:
+              ruleFindings.length > 1
+                ? `Plus ${ruleFindings.length - 1} more of the same in this draft.`
+                : undefined,
+          }))}
+        />
       )}
 
       <section className="marked" aria-labelledby="marked-heading">
