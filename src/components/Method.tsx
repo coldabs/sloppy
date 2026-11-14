@@ -10,10 +10,8 @@ import {
   severityWeight,
   type GroupId,
 } from '../lib/rules'
-import { siteGroupMeta, siteRules, type SiteGroup } from '../lib/siteRules'
 
-const groupOrder: GroupId[] = ['voice', 'claims', 'actions', 'format']
-const siteGroupOrder: SiteGroup[] = ['structure', 'style']
+const groupOrder: GroupId[] = ['voice', 'claims', 'actions', 'format', 'structure']
 
 export function Method() {
   return (
@@ -38,7 +36,8 @@ export function Method() {
               medium {severityWeight.medium}, low {severityWeight.low}, and
               scaled by how often it appears per 100 words. The scale
               levels off, so repeating one phrase costs more than saying
-              it twice, but never without limit.
+              it twice, but never without limit. A span matched by two
+              rules counts once, at the higher severity.
             </li>
             <li>
               One hit in a short draft costs far more than the same hit in
@@ -116,55 +115,6 @@ export function Method() {
         </div>
       </div>
 
-      <section className="site-rulebook" aria-labelledby="site-rulebook-title">
-        <p className="eyebrow">Website mode</p>
-        <h3 className="method__subtitle" id="site-rulebook-title">
-          Static page rules
-        </h3>
-        <p className="rules-block__blurb">
-          {siteRules.length} rules read the fetched markup and CSS. They use the
-          same weights and the same formula as the copy scan, and every signal is
-          counted so one stray declaration cannot decide a page.
-        </p>
-        <div className="site-rulebook__grid">
-          {siteGroupOrder.map((groupId) => {
-            const groupRules = siteRules.filter((rule) => rule.group === groupId)
-            return (
-              <div className="site-rulebook__group" key={groupId}>
-                <h4>
-                  {siteGroupMeta[groupId].label}
-                  <span>
-                    {groupRules.length} {groupRules.length === 1 ? 'rule' : 'rules'}
-                  </span>
-                </h4>
-                <table className="ledger">
-                  <thead>
-                    <tr>
-                      <th scope="col">Rule</th>
-                      <th scope="col">Severity</th>
-                      <th scope="col">What it catches</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groupRules.map((rule) => (
-                      <tr key={rule.id}>
-                        <th scope="row">{rule.label}</th>
-                        <td>
-                          <span className="severity-text">
-                            {severityLabel[rule.severity]}
-                          </span>
-                        </td>
-                        <td>{rule.note}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )
-          })}
-        </div>
-      </section>
-
       <div className="limits">
         <div className="limits__head">
           <p className="eyebrow">Limits</p>
@@ -176,13 +126,14 @@ export function Method() {
             true, useful, or clear.
           </li>
           <li>
-            Website mode sees static HTML and CSS only. JavaScript-rendered
-            content, computed styles, motion, and responsive layout are outside
-            the scan.
+            It sees text only. Layout, images, motion, and code are outside the
+            scan.
           </li>
           <li>
-            False positives happen. "Explore" is flagged even when it is the
-            right verb.
+            False positives happen. A single emphasised word can still be
+            flagged when it sits next to other capitalised words, and a
+            number can still be flagged when its source is too far away
+            to count as a citation.
           </li>
           <li>
             A high score is not proof of quality, and a low score is not proof of

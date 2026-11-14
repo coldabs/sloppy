@@ -1,10 +1,69 @@
 import { useState } from 'react'
-import { buildMarkedSegments, type Analysis } from '../lib/analyzer'
-import { rules, type Severity } from '../lib/rules'
-import { FindingList } from './FindingList'
+import { buildMarkedSegments, type Analysis, type Finding } from '../lib/analyzer'
+import { rules, severityLabel, type RuleDefinition, type Severity } from '../lib/rules'
 
 type Status = 'idle' | 'analyzing' | 'done' | 'error'
 type Filter = 'all' | Severity
+
+const FINDINGS_PAGE = 10
+
+// One rule's findings, paginated. A long draft can have hundreds of
+// hits for a single rule; the list shows the first one and reveals
+// ten more at a time, with an exact count of what is still hidden,
+// instead of silently stopping.
+function FindingItem({ rule, hits }: { rule: RuleDefinition; hits: Finding[] }) {
+  const [shown, setShown] = useState(1)
+  const visible = hits.slice(0, shown)
+  const remaining = hits.length - shown
+  return (
+    <li className="finding">
+      <div className="finding__head">
+        <span className={`tag tag--${rule.severity}`}>
+          {severityLabel[rule.severity]}
+        </span>
+        <h3 className="finding__title">{rule.label}</h3>
+        <span className="finding__count">
+          {hits.length} {hits.length === 1 ? 'hit' : 'hits'}
+        </span>
+      </div>
+      {visible.map((finding) => (
+        <p className="finding__excerpt" key={`${finding.start}-${finding.end}`}>
+          {finding.excerpt}
+        </p>
+      ))}
+      {hits.length > 1 ? (
+        <p className="finding__more">
+          Showing {shown} of {hits.length} hits.{' '}
+          {remaining > 0 ? (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() =>
+                setShown((value) => Math.min(hits.length, value + FINDINGS_PAGE))
+              }
+            >
+              Show {Math.min(FINDINGS_PAGE, remaining)} more
+            </button>
+          ) : null}
+          {shown > 1 ? (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setShown(1)}
+            >
+              Show fewer
+            </button>
+          ) : null}
+        </p>
+      ) : null}
+      <p className="finding__note">{rule.note}</p>
+      <p className="finding__fix">
+        <span className="finding__fix-label">Fix</span>
+        {rule.fix}
+      </p>
+    </li>
+  )
+}
 
 interface ResultPanelProps {
   analysis: Analysis | null
@@ -143,8 +202,6 @@ export function ResultPanel({
         </li>
       </ul>
 
-      <h3 className="result__section-title">Findings</h3>
-
       <div className="filters" role="group" aria-label="Filter findings by severity">
         {filterOptions.map((option) => {
           const count =
@@ -168,21 +225,11 @@ export function ResultPanel({
           No findings at this severity. Try another filter.
         </p>
       ) : (
-        <FindingList
-          items={visibleGroups.map(({ rule, hits: ruleFindings }) => ({
-            key: rule.id,
-            label: rule.label,
-            severity: rule.severity,
-            note: rule.note,
-            fix: rule.fix,
-            excerpt: ruleFindings[0].excerpt,
-            count: ruleFindings.length,
-            more:
-              ruleFindings.length > 1
-                ? `Plus ${ruleFindings.length - 1} more of the same in this draft.`
-                : undefined,
-          }))}
-        />
+        <ul className="findings">
+          {visibleGroups.map(({ rule, hits: ruleFindings }) => (
+            <FindingItem key={rule.id} rule={rule} hits={ruleFindings} />
+          ))}
+        </ul>
       )}
 
       <section className="marked" aria-labelledby="marked-heading">
