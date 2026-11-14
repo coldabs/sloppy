@@ -71,8 +71,14 @@ describe('P1: bare and spelled-out claim numbers (F-08)', () => {
 
   it('leaves a cited claim number alone', () => {
     expect(
-      ruleIds('We have 10,000 users, according to the 2025 survey report.'),
+      ruleIds('We have 10,000 users, according to the 2025 Gartner survey report.'),
     ).not.toContain('unsourced-number')
+  })
+
+  it('flags a claim number whose citation names no publication', () => {
+    expect(
+      ruleIds('We have 10,000 users, according to the 2025 survey report.'),
+    ).toContain('unsourced-number')
   })
 
   it('leaves numbers with context alone', () => {

@@ -49,12 +49,24 @@ describe('analyze', () => {
   })
 
   it('flags a percentage with no source nearby', () => {
-    expect(ruleIds('We serve 99.9% uptime every month.')).toContain('unsourced-number')
+    // "99.9% uptime" is a trust claim, so it counts once, under that
+    // rule, not under this one. A percentage that is not a trust claim
+    // still flags here.
+    expect(ruleIds('We serve 99.9% more customers every month.')).toContain(
+      'unsourced-number',
+    )
   })
 
   it('ignores a number that names its source', () => {
-    const ids = ruleIds('Uptime was 99.9%, according to the 2025 audit report.')
+    // A citation has to name its publication: "the 2025 Gartner audit
+    // report" counts, a bare "2025 audit report" does not.
+    const ids = ruleIds('Uptime was 99.9%, according to the 2025 Gartner audit report.')
     expect(ids).not.toContain('unsourced-number')
+  })
+
+  it('flags a number whose "source" names no publication', () => {
+    const ids = ruleIds('Uptime was 99.9%, according to the 2025 audit report.')
+    expect(ids).toContain('unsourced-number')
   })
 
   it('flags compliance claims at high severity', () => {
@@ -170,11 +182,20 @@ describe('analyze', () => {
     expect(ruleIds('We grew 500% per the survey data.')).toContain('unsourced-number')
   })
 
-  it('does not flag a number with a link next to it', () => {
+  it('does not flag a number with a link to evidence next to it', () => {
+    // The link has to look like evidence: a report path counts, a bare
+    // homepage does not.
+    const ids = ruleIds(
+      'We grew 500% last year. See https://example.com/2025-growth-report for the full breakdown.',
+    )
+    expect(ids).not.toContain('unsourced-number')
+  })
+
+  it('flags a number whose only link is a bare homepage', () => {
     const ids = ruleIds(
       'We grew 500% last year. See https://example.com for the full breakdown.',
     )
-    expect(ids).not.toContain('unsourced-number')
+    expect(ids).toContain('unsourced-number')
   })
 
   it('keeps clean technical copy clean', () => {
