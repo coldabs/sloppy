@@ -121,9 +121,17 @@ root, the Framework Preset is Vite, and the deployment is not pinned to an older
 commit, then redeploy.
 
 A purely static host, or plain `vite` without `server.mjs`, has no fetch
-endpoint. The Website panel now checks `/api/health` when it opens and says so
-before a scan. Run the local server or deploy an equivalent Node/serverless
-route on that host.
+endpoint. The Website panel checks `/api/health` when it opens. When the check
+fails, it offers an opt-in public CORS proxy (`proxy.corsfix.com`) so live URL
+scans still work on that host. The page URL is sent to that public service, and
+the panel says so before the first scan. Turning the proxy off, or running the
+app locally, keeps scans private.
+
+The proxy is a fallback, not a replacement for the API. It can be rate-limited,
+may fail on sites that block it, and cannot report a redirected final URL. Deploy
+a fetch function for reliable, private scanning. On Netlify, this repository
+builds as a static site, so either keep the opt-in proxy or add a Netlify
+Function that mirrors `api/fetch.js`.
 
 ## How the score works
 
@@ -234,6 +242,7 @@ src/
     rules.ts           copy rules, lexicons, weights, group metadata
     siteAnalyzer.ts    site scoring and result assembly
     siteRules.ts       DOM and CSS rule implementations
+    target.ts          URL normalisation and private-host checks
     exampleDraft.ts    deliberately sloppy sample text
     *.test.ts          rule and scoring tests
   index.css            the whole visual system
@@ -247,8 +256,12 @@ docs/
 
 Copy mode never leaves the tab. Website mode sends the URL to the app's fetch
 route, either the local server or the deployed function, which fetches the page
-directly. No analytics, no account, no third-party proxy, and no stored pages.
-Analysis always runs in the browser.
+directly. Analysis always runs in the browser. There is no analytics, no account,
+and no stored page.
+
+On a static host without the API, live scanning uses a public CORS proxy only
+after you choose it. The target URL is sent to `proxy.corsfix.com`, not to us.
+Decline the proxy or run the app locally for private scans.
 
 ## Limits
 
@@ -265,7 +278,9 @@ See the audit notes in the repository history if they are kept with the project.
 Website mode reads a static fetch. It cannot see JavaScript-rendered content,
 computed styles, hover states, animation, responsive layout, or any page behind
 a login. Style checks count declarations in fetched CSS and inline styles; they
-do not know which element a declaration applies to.
+do not know which element a declaration applies to. The public-proxy fallback
+adds its own limits: it may be rate-limited, can be blocked by the target site,
+and does not report the final URL after redirects, so relative assets can miss.
 
 ## Accessibility
 

@@ -1,15 +1,34 @@
 import { IconFlask } from '@tabler/icons-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { analyzeSite, type SiteAnalysis } from '../lib/siteAnalyzer'
+import { isPrivateHost, normaliseUrl } from '../lib/target'
 import { SiteResultPanel, type SiteStatus } from './SiteResultPanel'
 
 const MAX_STYLESHEETS = 5
+const PROXY_STYLESHEETS = 3
+const PROXY_PREFIX = 'https://proxy.corsfix.com/?'
+const CONSENT_KEY = 'sloppy:proxy-consent'
 
-const normaliseUrl = (value: string) => {
-  const trimmed = value.trim()
-  if (!trimmed) return ''
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed
-  return `https://${trimmed}`
+type FetchMode = 'api' | 'proxy'
+type ProxyConsent = 'unknown' | 'granted' | 'denied'
+
+const proxyUrl = (target: string) => `${PROXY_PREFIX}${target}`
+
+const readConsent = (): ProxyConsent => {
+  try {
+    const value = window.localStorage.getItem(CONSENT_KEY)
+    return value === 'granted' || value === 'denied' ? value : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+const writeConsent = (value: ProxyConsent) => {
+  try {
+    window.localStorage.setItem(CONSENT_KEY, value)
+  } catch {
+    // Storage is optional; the choice still applies for this session.
+  }
 }
 
 const responseError = async (response: Response) => {
@@ -40,6 +59,7 @@ const fetchStylesheets = async (
   pageUrl: string,
   html: string,
   signal: AbortSignal,
+  mode: FetchMode,
 ) => {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const page = new URL(pageUrl)
@@ -66,8 +86,19 @@ const fetchStylesheets = async (
       Number(new URL(a).origin === page.origin),
   )
 
+  const limit = mode === 'proxy' ? PROXY_STYLESHEETS : MAX_STYLESHEETS
   const results = await Promise.allSettled(
-    hrefs.slice(0, MAX_STYLESHEETS).map(async (href) => {
+    hrefs.slice(0, limit).map(async (href) => {
+      if (mode === 'proxy') {
+        const response = await fetch(proxyUrl(href), { signal })
+        if (!response.ok) throw new Error('Stylesheet skipped')
+        const type = response.headers.get('content-type') ?? ''
+        if (type && !/text\/css|text\/plain/i.test(type)) {
+          throw new Error('Stylesheet skipped')
+        }
+        return response.text()
+      }
+
       const response = await fetch(`/api/css?url=${encodeURIComponent(href)}`, {
         signal,
       })
@@ -91,6 +122,7 @@ export function SiteChecker() {
   const [targetUrl, setTargetUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [apiState, setApiState] = useState<ApiState>('checking')
+  const [proxyConsent, setProxyConsent] = useState<ProxyConsent>(readConsent)
   const request = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -111,10 +143,40 @@ export function SiteChecker() {
     }
   }, [])
 
+  const grantProxy = () => {
+    setProxyConsent('granted')
+    writeConsent('granted')
+    setError(null)
+  }
+
+  const denyProxy = () => {
+    setProxyConsent('denied')
+    writeConsent('denied')
+    setError(null)
+  }
+
   const scan = async (target: string, demo = false) => {
+    const mode: FetchMode | null =
+      apiState === 'ok' ? 'api' : proxyConsent === 'granted' ? 'proxy' : null
+
+    if (!demo && !mode) {
+      setAnalysis(null)
+      setStatus('error')
+      setError(
+        'Choose whether to use the public proxy above, or run the app locally.',
+      )
+      return
+    }
+
     request.current?.abort()
     const controller = new AbortController()
     request.current = controller
+
+    const timeoutSignal = AbortSignal.timeout(35000)
+    const signal =
+      typeof AbortSignal.any === 'function'
+        ? AbortSignal.any([controller.signal, timeoutSignal])
+        : controller.signal
 
     setError(null)
     setAnalysis(null)
@@ -129,7 +191,7 @@ export function SiteChecker() {
       if (demo) {
         pageUrl = new URL('/demo-site/', window.location.href).href
         const htmlResponse = await fetch('/demo-site/index.html', {
-          signal: controller.signal,
+          signal,
           cache: 'no-store',
         })
         if (!htmlResponse.ok) {
@@ -138,19 +200,47 @@ export function SiteChecker() {
         html = await htmlResponse.text()
 
         const cssResponse = await fetch('/demo-site/styles.css', {
-          signal: controller.signal,
+          signal,
           cache: 'no-store',
         })
         if (cssResponse.ok) stylesheets = [await cssResponse.text()]
+      } else if (mode === 'proxy') {
+        const parsed = new URL(target)
+        if (isPrivateHost(parsed.hostname)) {
+          throw new Error(
+            'Local and private addresses cannot be scanned through the public proxy.',
+          )
+        }
+
+        const response = await fetch(proxyUrl(target), {
+          signal,
+          cache: 'no-store',
+        })
+        if (!response.ok) {
+          throw new Error(
+            [403, 429].includes(response.status)
+              ? `The public proxy could not fetch that page (HTTP ${response.status}). It may block automated requests, so try another public URL.`
+              : `The public proxy returned HTTP ${response.status}.`,
+          )
+        }
+
+        const type = response.headers.get('content-type') ?? ''
+        if (type && !/text\/html|application\/xhtml\+xml/i.test(type)) {
+          throw new Error('That URL did not return an HTML page.')
+        }
+
+        pageUrl = target
+        html = await response.text()
+        stylesheets = await fetchStylesheets(pageUrl, html, signal, 'proxy')
       } else {
         const response = await fetch(`/api/fetch?url=${encodeURIComponent(target)}`, {
-          signal: controller.signal,
+          signal,
         })
         if (!response.ok) throw new Error(await responseError(response))
         const body = await parseJson<{ url: string; html: string }>(response)
         pageUrl = body.url
         html = body.html
-        stylesheets = await fetchStylesheets(pageUrl, html, controller.signal)
+        stylesheets = await fetchStylesheets(pageUrl, html, signal, 'api')
       }
 
       setStatus('analyzing')
@@ -162,7 +252,11 @@ export function SiteChecker() {
       if (controller.signal.aborted) return
       setStatus('error')
       setError(
-        caught instanceof Error ? caught.message : 'The page could not be scanned.',
+        caught instanceof DOMException && caught.name === 'TimeoutError'
+          ? 'The fetch took too long. Try a smaller page or another URL.'
+          : caught instanceof Error
+            ? caught.message
+            : 'The page could not be scanned.',
       )
     }
   }
@@ -196,6 +290,15 @@ export function SiteChecker() {
       return
     }
 
+    if (apiState === 'missing' && proxyConsent !== 'granted') {
+      setAnalysis(null)
+      setStatus('error')
+      setError(
+        'This static host has no fetch API. Choose whether to use the public proxy above, or run the app locally.',
+      )
+      return
+    }
+
     void scan(target)
   }
 
@@ -203,10 +306,43 @@ export function SiteChecker() {
 
   return (
     <div className="site-check">
-      {apiState === 'missing' ? (
+      {apiState === 'missing' && proxyConsent === 'unknown' ? (
+        <section className="proxy-consent" aria-labelledby="proxy-consent-title">
+          <p className="eyebrow">Static host</p>
+          <h3 id="proxy-consent-title">Live scans need a fetch route</h3>
+          <p>
+            This deployment has no server. Live scans can use a public CORS
+            proxy operated by{' '}
+            <a href="https://corsfix.com" target="_blank" rel="noreferrer noopener">
+              corsfix.com
+            </a>
+            . The page URL is sent to that service. Run the app locally for
+            private scans.
+          </p>
+          <div className="proxy-consent__actions">
+            <button className="button button--primary" type="button" onClick={grantProxy}>
+              Use the public proxy
+            </button>
+            <button className="text-button" type="button" onClick={denyProxy}>
+              Not now
+            </button>
+          </div>
+        </section>
+      ) : apiState === 'missing' && proxyConsent === 'denied' ? (
         <p className="api-status" role="status">
           Live scanning needs the fetch API. Run the app with npm run dev, or
-          deploy the api/ routes on this host.
+          deploy the api/ routes.
+          <button className="text-button" type="button" onClick={grantProxy}>
+            Use the proxy
+          </button>
+        </p>
+      ) : apiState === 'missing' && proxyConsent === 'granted' ? (
+        <p className="api-status api-status--proxy" role="status">
+          Live scans use the public proxy at corsfix.com. The page URL is sent
+          to that service.
+          <button className="text-button" type="button" onClick={denyProxy}>
+            Turn off
+          </button>
         </p>
       ) : null}
       <form className="site-form" onSubmit={submit}>

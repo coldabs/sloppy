@@ -1068,6 +1068,58 @@ img {
   background-color: var(--danger);
 }
 
+.api-status .text-button {
+  margin-left: auto;
+}
+
+.api-status--proxy {
+  border-color: var(--cobalt-line);
+  background-color: var(--cobalt-soft);
+  color: var(--cobalt-strong);
+}
+
+.api-status--proxy::before {
+  background-color: var(--cobalt);
+}
+
+.proxy-consent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  border: 1px solid var(--cobalt-line);
+  border-radius: 20px;
+  background-color: var(--cobalt-soft);
+}
+
+.proxy-consent h3 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.proxy-consent p:not(.eyebrow) {
+  max-width: 72ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.proxy-consent a {
+  color: var(--cobalt-strong);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.proxy-consent__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 4px;
+}
+
 .site-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
