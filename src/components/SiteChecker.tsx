@@ -1,5 +1,5 @@
 import { IconFlask } from '@tabler/icons-react'
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { analyzeSite, type SiteAnalysis } from '../lib/siteAnalyzer'
 import { SiteResultPanel, type SiteStatus } from './SiteResultPanel'
 
@@ -82,13 +82,34 @@ const fetchStylesheets = async (
   )
 }
 
+type ApiState = 'checking' | 'ok' | 'missing'
+
 export function SiteChecker() {
   const [url, setUrl] = useState('')
   const [status, setStatus] = useState<SiteStatus>('idle')
   const [analysis, setAnalysis] = useState<SiteAnalysis | null>(null)
   const [targetUrl, setTargetUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [apiState, setApiState] = useState<ApiState>('checking')
   const request = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetch('/api/health', { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('No health endpoint')
+        const body = (await response.json()) as { ok?: boolean }
+        if (!cancelled) setApiState(body.ok ? 'ok' : 'missing')
+      })
+      .catch(() => {
+        if (!cancelled) setApiState('missing')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const scan = async (target: string, demo = false) => {
     request.current?.abort()
@@ -182,6 +203,12 @@ export function SiteChecker() {
 
   return (
     <div className="site-check">
+      {apiState === 'missing' ? (
+        <p className="api-status" role="status">
+          Live scanning needs the fetch API. Run the app with npm run dev, or
+          deploy the api/ routes on this host.
+        </p>
+      ) : null}
       <form className="site-form" onSubmit={submit}>
         <div className="site-form__field">
           <label className="field-label" htmlFor="site-url">

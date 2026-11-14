@@ -185,23 +185,6 @@ export function ResultPanel({
         </div>
       </div>
 
-      <ul className="severity-meter" aria-label="Hits by severity">
-        <li>
-          <span className="tag tag--high">High</span>
-          <output aria-label={`${counts.high} high severity hits`}>{counts.high}</output>
-        </li>
-        <li>
-          <span className="tag tag--medium">Medium</span>
-          <output aria-label={`${counts.medium} medium severity hits`}>
-            {counts.medium}
-          </output>
-        </li>
-        <li>
-          <span className="tag tag--low">Low</span>
-          <output aria-label={`${counts.low} low severity hits`}>{counts.low}</output>
-        </li>
-      </ul>
-
       <h3 className="result__section-title">Findings</h3>
 
       <div className="filters" role="group" aria-label="Filter findings by severity">

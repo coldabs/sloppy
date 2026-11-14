@@ -108,14 +108,22 @@ static server plus API in production. `npm run preview` is an alias for
 
 ### Deploying
 
-Vercel detects the Vite build and the `api/fetch.js` and `api/css.js`
-functions, so live scans work on a Vercel deployment with the same guards. The
-functions force private-address blocking off the environment flag and never
+Vercel detects the Vite build and the `api/fetch.js`, `api/css.js`, and
+`api/health.js` functions. `vercel.json` registers them explicitly and sets the
+build output, so a deployment from the repository root includes the fetch API.
+The functions force private-address blocking off the environment flag and never
 read local files.
 
+After deploying, open `https://your-site/api/health`. It must return
+`{"ok":true,"mode":"serverless"}`. If that URL is a 404, the host is not running
+the `api/` functions: check that the Vercel Root Directory is the repository
+root, the Framework Preset is Vite, and the deployment is not pinned to an older
+commit, then redeploy.
+
 A purely static host, or plain `vite` without `server.mjs`, has no fetch
-endpoint. The Website panel then shows a clear message telling you to run the
-local server or deploy the `api/` routes instead of a JSON parse error.
+endpoint. The Website panel now checks `/api/health` when it opens and says so
+before a scan. Run the local server or deploy an equivalent Node/serverless
+route on that host.
 
 ## How the score works
 
@@ -206,6 +214,8 @@ server/
 api/
   fetch.js             Vercel function for page fetches
   css.js               Vercel function for linked stylesheets
+  health.js            Vercel function for deployment diagnostics
+vercel.json            Vercel build and function configuration
 src/
   components/
     Detector.tsx       mode tabs and panel routing
@@ -266,9 +276,30 @@ regions with live status roles, and respects `prefers-reduced-motion`.
 ## Stack
 
 React 19, TypeScript, Vite, Vitest, happy-dom, Oxlint, Tabler icons for a small
-set of named glyphs, and Node's built-in HTTP and fetch. No UI framework and no
-runtime dependency for the server. The look is a Swiss poster: paper, ink, and
-one lime accent, in a fixed light theme.
+set of named glyphs, Instrument Sans through Fontsource, and Node's built-in HTTP
+and fetch. No UI framework and no runtime dependency for the server. The look is
+a modern studio system: warm-white canvas, near-black ink, electric cobalt,
+rounded surfaces, and one soft elevation tier.
+
+## Visual design
+
+- Electric cobalt is the only accent. A scanner should have one signal color, so
+  cobalt marks the score, the primary action, and the active state, and nothing
+  else competes with it.
+- Warm white and near-black ink keep long rule ledgers readable without the
+  sterile all-white look.
+- Instrument Sans is self-hosted through Fontsource. Its open shapes and tight
+  display weights read as a modern studio tool without the default system-font
+  feel.
+- Surface radii step from 24px panels to 18px finding cards to 12px controls.
+  Controls stay rectangular enough to read as controls, not capsules.
+- The limits panel flips to near-black so caveats sit apart from the rules, and
+  the cobalt footer closes the page as a brand moment.
+- Motion is limited to section entry and hover state changes. Reduced-motion
+  users get the same layout with no movement.
+
+The demo fixture keeps its own deliberately dated look, because it exists to be
+flagged.
 
 ## Contributing
 

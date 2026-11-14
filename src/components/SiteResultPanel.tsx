@@ -110,7 +110,7 @@ export function SiteResultPanel({
     )
   }
 
-  const { score, verdict, counts, hits, rulesHit, stats, title, description, url, structure, style, copy, copyText, textTruncated } =
+  const { score, verdict, hits, rulesHit, stats, title, description, url, structure, style, copy, copyText, textTruncated } =
     analysis
 
   const segments = buildMarkedSegments(copyText, copy.findings)
@@ -135,23 +135,6 @@ export function SiteResultPanel({
         </div>
       </div>
 
-      <ul className="severity-meter" aria-label="Hits by severity">
-        <li>
-          <span className="tag tag--high">High</span>
-          <output aria-label={`${counts.high} high severity hits`}>{counts.high}</output>
-        </li>
-        <li>
-          <span className="tag tag--medium">Medium</span>
-          <output aria-label={`${counts.medium} medium severity hits`}>
-            {counts.medium}
-          </output>
-        </li>
-        <li>
-          <span className="tag tag--low">Low</span>
-          <output aria-label={`${counts.low} low severity hits`}>{counts.low}</output>
-        </li>
-      </ul>
-
       <div className="site-result__grid">
         <aside className="site-facts" aria-labelledby="site-facts-heading">
           <h3 className="result__section-title" id="site-facts-heading">
@@ -160,12 +143,7 @@ export function SiteResultPanel({
           <dl className="site-facts__list">
             <div>
               <dt>URL</dt>
-              <dd>
-                <a href={url} target="_blank" rel="noreferrer noopener">
-                  {shortUrl(url)}
-                  <IconExternalLink size={12} stroke={2} aria-hidden="true" />
-                </a>
-              </dd>
+              <dd>{shortUrl(url)}</dd>
             </div>
             <div>
               <dt>Title</dt>
@@ -202,6 +180,10 @@ export function SiteResultPanel({
               </dd>
             </div>
           </dl>
+          <a className="site-facts__open" href={url} target="_blank" rel="noreferrer noopener">
+            Open page
+            <IconExternalLink size={14} stroke={2} aria-hidden="true" />
+          </a>
           <p className="site-facts__limit">
             Static fetch only: JavaScript-rendered content, computed styles,
             hover states, and responsive layout are outside this scan.

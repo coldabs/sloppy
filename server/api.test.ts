@@ -18,6 +18,7 @@ vi.mock('../server/fetch.mjs', () => {
 
 import cssHandler from '../api/css.js'
 import fetchHandler from '../api/fetch.js'
+import healthHandler from '../api/health.js'
 import {
   FetchError,
   fetchCss,
@@ -55,6 +56,19 @@ const call = async (handler, request) => {
 beforeEach(() => {
   pageMock.mockReset()
   cssMock.mockReset()
+})
+
+describe('Vercel health handler', () => {
+  it('reports a working serverless endpoint', async () => {
+    const result = await call(healthHandler, { method: 'GET', query: {}, url: '/api/health' })
+    expect(result.status).toBe(200)
+    expect(result.body).toEqual({ ok: true, mode: 'serverless' })
+  })
+
+  it('rejects non-GET methods', async () => {
+    const result = await call(healthHandler, { method: 'POST', query: {}, url: '/api/health' })
+    expect(result.status).toBe(405)
+  })
 })
 
 describe('Vercel page fetch handler', () => {

@@ -22,6 +22,12 @@ export function Hero() {
             How the score works
           </a>
         </div>
+        <ul className="hero__meta" aria-label="Tool properties">
+          <li>No uploads</li>
+          <li>{rules.length} copy rules</li>
+          <li>{siteRules.length} site rules</li>
+          <li>Same result every time</li>
+        </ul>
       </div>
       <aside className="hero__aside" aria-label="Tool facts">
         <p className="eyebrow">Spec</p>
