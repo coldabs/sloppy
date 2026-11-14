@@ -129,9 +129,16 @@ app locally, keeps scans private.
 
 The proxy is a fallback, not a replacement for the API. It can be rate-limited,
 may fail on sites that block it, and cannot report a redirected final URL. Deploy
-a fetch function for reliable, private scanning. On Netlify, this repository
-builds as a static site, so either keep the opt-in proxy or add a Netlify
-Function that mirrors `api/fetch.js`.
+a fetch function for reliable, private scanning.
+
+### Netlify
+
+`netlify.toml` builds the Vite app into `dist` and routes `/api/fetch`,
+`/api/css`, and `/api/health` to the functions in `netlify/functions/`. Netlify
+bundles them with esbuild on Node 22. After deploying, open
+`https://your-site/api/health`; it should return
+`{"ok":true,"mode":"netlify"}`. When that works the Website panel uses the
+functions automatically and does not offer the public proxy.
 
 ## How the score works
 
@@ -223,6 +230,12 @@ api/
   fetch.js             Vercel function for page fetches
   css.js               Vercel function for linked stylesheets
   health.js            Vercel function for deployment diagnostics
+netlify/
+  functions/
+    fetch.mjs          Netlify function for page fetches
+    css.mjs            Netlify function for linked stylesheets
+    health.mjs         Netlify function for deployment diagnostics
+netlify.toml           Netlify build, functions, and /api redirects
 vercel.json            Vercel build and function configuration
 src/
   components/
