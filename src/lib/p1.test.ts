@@ -98,16 +98,21 @@ describe('P1: bare and spelled-out claim numbers (F-08)', () => {
 describe('P1: findings pagination (F-09)', () => {
   it('returns every hit instead of stopping at 40 per rule', () => {
     const result = analyze('seamless '.repeat(100))
-    expect(result.hits).toBe(100)
-    expect(result.findings).toHaveLength(100)
+    // P2: the same draft also fires the diversity rules (the pair
+    // "seamless seamless" 99 times, and a type-token ratio of 0.01),
+    // so the total is 200 — and every one of them is returned.
+    expect(result.hits).toBe(200)
+    expect(result.findings).toHaveLength(200)
     const group = result.groups.find((item) => item.rule.id === 'buzzwords')
     expect(group?.hits).toHaveLength(100)
   })
 
   it('returns all 450 hits of a long repetitive draft', () => {
     const result = analyze('seamless '.repeat(450))
-    expect(result.hits).toBe(450)
-    expect(result.findings).toHaveLength(450)
+    // P2: 450 buzzword hits plus 449 repeated bigrams plus the
+    // type-token ratio signal — all returned, none capped.
+    expect(result.hits).toBe(900)
+    expect(result.findings).toHaveLength(900)
   })
 })
 
@@ -219,12 +224,19 @@ describe('P1: structural signals (F-13)', () => {
 })
 
 describe('P1: rule list', () => {
-  it('has eighteen rules, including the three structural ones', () => {
-    expect(rules.length).toBe(18)
+  it('has twenty-eight rules, including the structural, diversity, and substance ones', () => {
+    expect(rules.length).toBe(28)
     const ids = rules.map((rule) => rule.id)
     expect(ids).toContain('same-length-sentences')
     expect(ids).toContain('repeated-openings')
     expect(ids).toContain('adverb-density')
+    expect(ids).toContain('rule-of-three')
+    expect(ids).toContain('burstiness')
+    expect(ids).toContain('low-ttr')
+    expect(ids).toContain('repeated-bigrams')
+    expect(ids).toContain('transition-stacking')
+    expect(ids).toContain('thin-substance')
+    expect(ids).toContain('pseudo-wisdom')
     expect(new Set(ids).size).toBe(ids.length)
   })
 })

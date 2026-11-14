@@ -72,7 +72,10 @@ describe('fix2: F-20 one claim counts once', () => {
   })
 
   it('scores the built-in example draft higher than before', () => {
-    expect(analyze(exampleDraft).score).toBe(6)
+    // P2 moved the score from 6 to 9: the single trailing dash
+    // ("- Jamie, CEO") no longer counts at em-dash density, and the
+    // draft still lands in Industrial slop.
+    expect(analyze(exampleDraft).score).toBe(9)
   })
 })
 
@@ -108,8 +111,19 @@ describe('fix2: F-21 near-variants of listed phrases', () => {
     )
   })
 
-  it('flags an accented "délve"', () => {
-    expect(ruleIds('Délve into the details.')).toContain('ai-tells')
+  it('flags an accented "délve" in a cluster of tells', () => {
+    expect(
+      ruleIds(
+        'Délve into the details, navigate the tapestry, and showcase the realm.',
+      ),
+    ).toContain('ai-tells')
+  })
+
+  it('leaves a single accented "délve" alone', () => {
+    // Polish: a single clustered tell is ordinary prose, however it
+    // is spelled — the normalisation still works, the gate is the
+    // cluster.
+    expect(ruleIds('Délve into the details.')).not.toContain('ai-tells')
   })
 })
 
@@ -200,17 +214,39 @@ describe('fix2: F-25 percentages need claim context', () => {
 describe('fix2: F-29 the URL window measures the start of the link', () => {
   it('exempts an evidence link starting within 40 characters of the number', () => {
     expect(
-      ruleIds('10,000 users xxxxxxxxxx https://example.com/report-2025'),
+      ruleIds('We serve 10,000 users, see https://example.com/report-2025'),
     ).not.toContain('unsourced-number')
     expect(
-      ruleIds('10,000 users xxxxxxxxxxxxxxxxxx https://example.com/report-2025'),
+      ruleIds(
+        'We serve 10,000 users xxxxxxxxxxxxxxxxxx https://example.com/report-2025',
+      ),
     ).not.toContain('unsourced-number')
   })
 
-  it('flags an evidence link starting more than 40 characters away', () => {
+  it('exempts an evidence link in the same sentence even when it starts more than 40 characters away', () => {
+    // Polish (F-56): an evidence-path link in the same sentence as
+    // the number clears it wherever it sits in that sentence — a
+    // real citation can sit further than 40 characters past the
+    // number and still be the number's source.
     expect(
       ruleIds(
-        `10,000 users ${'x'.repeat(35)} https://example.com/report-2025`,
+        `We serve 10,000 users ${'x'.repeat(35)} https://example.com/report-2025`,
+      ),
+    ).not.toContain('unsourced-number')
+  })
+
+  it('still flags a number when the evidence link is two sentences away', () => {
+    expect(
+      ruleIds(
+        'We serve 10,000 users. The team works hard every single day. See the full report at https://example.com/report-2025.',
+      ),
+    ).toContain('unsourced-number')
+  })
+
+  it('still flags a number when the link is pricing, however close', () => {
+    expect(
+      ruleIds(
+        'We serve 10,000 users, see https://example.com/pricing for details.',
       ),
     ).toContain('unsourced-number')
   })
@@ -274,8 +310,12 @@ describe('fix2: F-35 English-only is documented, base layer still works', () => 
   })
 
   it('still flags an em dash in non-English text', () => {
+    // P2: one dash is not evidence in any language. Three paired
+    // interruptions in a short French passage are.
     expect(
-      ruleIds('Elle a dit \u2014 je cite \u2014 que c\u2019\u00e9tait bien.'),
+      ruleIds(
+        'Elle a dit \u2014 je cite \u2014 que c\u2019\u00e9tait bien. Elle a dit \u2014 je cite \u2014 que c\u2019\u00e9tait bien. Elle a dit \u2014 je cite \u2014 que c\u2019\u00e9tait bien.',
+      ),
     ).toContain('em-dash')
   })
 })
@@ -302,9 +342,14 @@ describe('fix2: F-36 package hygiene and CI', () => {
 
 describe('fix2: F-38 a paired interruption counts once', () => {
   it('counts two dashes around one interruption as one hit', () => {
-    const result = analyze('She said \u2014 and I quote \u2014 that it was fine.')
-    expect(result.findings.filter((finding) => finding.ruleId === 'em-dash')).toHaveLength(1)
-    expect(result.score).toBe(63)
+    // P2: the pairing still holds, but a single interruption is
+    // below the density threshold, so three pairs are needed to see
+    // it fire.
+    const result = analyze(
+      'She said \u2014 and I quote \u2014 that it was fine. He said \u2014 and I quote \u2014 that it was done. They said \u2014 and I quote \u2014 that it was ready.',
+    )
+    expect(result.findings.filter((finding) => finding.ruleId === 'em-dash')).toHaveLength(3)
+    expect(result.score).toBe(54)
   })
 })
 

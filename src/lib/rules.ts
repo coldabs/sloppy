@@ -1,7 +1,14 @@
 import { UNDERSCORE_PLACEHOLDER } from './normalize'
 
 export type Severity = 'high' | 'medium' | 'low'
-export type GroupId = 'voice' | 'claims' | 'actions' | 'format' | 'structure'
+export type GroupId =
+  | 'voice'
+  | 'claims'
+  | 'actions'
+  | 'format'
+  | 'structure'
+  | 'diversity'
+  | 'substance'
 
 export interface RawMatch {
   start: number
@@ -16,6 +23,15 @@ export interface RuleDefinition {
   note: string
   fix: string
   scan: (text: string) => RawMatch[]
+  // Document-level rules (burstiness, type-token ratio) cannot be
+  // scored by hit count: one whole-text span would cost almost
+  // nothing through the density factor. A rule that sets this
+  // computes its own penalty from the measured value instead. The
+  // analyser calls it with the rule's matches, the word count, and
+  // the scanned text, so the metric is recomputed from the same text
+  // the scan judged. Rules without it use the standard
+  // severity-weight x density-factor penalty.
+  penaltyFor?: (matches: RawMatch[], words: number, text: string) => number
 }
 
 export const severityWeight: Record<Severity, number> = {
@@ -56,6 +72,16 @@ export const groupMeta: Record<GroupId, { label: string; blurb: string }> = {
   structure: {
     label: 'Structure',
     blurb: 'The shape of the writing: cadence, repetition, and density.',
+  },
+  diversity: {
+    label: 'Diversity',
+    blurb:
+      'How varied the writing is: sentence lengths, word choice, and how paragraphs open.',
+  },
+  substance: {
+    label: 'Substance',
+    blurb:
+      'Whether the text says anything concrete, or only sounds as if it does.',
   },
 }
 
@@ -170,6 +196,119 @@ const countWordsIn = (text: string): number => {
   return trimmed.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length
 }
 
+// Paragraphs: blocks separated by a blank line. A single newline is a
+// line break inside a paragraph, not a new paragraph — a list of short
+// lines is one paragraph for the substance check.
+const paragraphSpans = (text: string): SentenceSpan[] => {
+  const spans: SentenceSpan[] = []
+  const pattern = /(?:^|\n)\s*\n/g
+  let start = 0
+  for (const match of text.matchAll(pattern)) {
+    const end = (match.index ?? 0) + (match[0].startsWith('\n') ? 0 : 1)
+    if (end > start && text.slice(start, end).trim()) {
+      spans.push({ start, end })
+    }
+    start = (match.index ?? 0) + match[0].length
+  }
+  if (text.slice(start).trim()) spans.push({ start, end: text.length })
+  return spans
+}
+
+// Formal registers are legitimately uniform: a contract repeats
+// defined terms, and API documentation repeats command names. The
+// diversity rules (burstiness, type-token ratio, repeated bigrams)
+// do not fire on formal sentences, because the uniformity is the
+// genre, not the writer. The exemption is per sentence, not per
+// draft: one legal sentence in a 2,245-word draft must not exempt
+// the other 2,200 words — the formal sentences are removed and the
+// rest of the draft is measured on its own. The markers are
+// deliberately narrow — a few legal or technical words do not
+// exempt a marketing page.
+const LEGAL_MARKERS =
+  /\b(?:licensee|licensor|pursuant to|notwithstanding|hereinafter|hereby|indemnif|arbitration|jurisdiction)\b/i
+const TECHNICAL_MARKERS =
+  /```|(?:^|\s)(?:npm|npx|yarn|pnpm|pip|bun|git|docker|curl)\s+\S+|\bexit code\b|\bflag\b.*\b(?:--\w+)\b|(?:^|\n)\s*(?:returns|parameters|arguments|options):/i
+
+const isFormalSentence = (sentence: string): boolean =>
+  LEGAL_MARKERS.test(sentence) || TECHNICAL_MARKERS.test(sentence)
+
+// The draft with its formal sentences removed, for the diversity
+// measurements. The rules do not fire if too little text is left.
+const stripFormalSentences = (text: string): string =>
+  sentenceSpans(text)
+    .filter((span) => !isFormalSentence(text.slice(span.start, span.end)))
+    .map((span) => text.slice(span.start, span.end))
+    .join(' ')
+
+// Burstiness: the standard deviation of sentence lengths divided by
+// the mean. The published GPTZero range (human 0.6–1.2, model
+// 0.2–0.4) does not transfer to short drafts: on the P2 calibration
+// corpus, clean human text of 80–200 words measures 0.17–0.35 — an
+// academic abstract 0.23, a contract 0.17, API documentation 0.35, a
+// varied 167-word news paragraph 0.34 — while a run of ten
+// near-identical short sentences measures 0.08. The threshold below
+// is calibrated from that corpus, not copied: under 0.12, with at
+// least 8 sentences, at least 80 words, and a mean sentence under 16
+// words. Long, varied sentences are not the pattern this catches.
+export const BURSTINESS_THRESHOLD = 0.12
+export const BURSTINESS_MIN_SENTENCES = 8
+export const BURSTINESS_MIN_WORDS = 80
+export const BURSTINESS_MAX_MEAN_LENGTH = 16
+
+export interface Burstiness {
+  value: number
+  sentences: number
+  mean: number
+}
+
+export const burstinessOf = (text: string): Burstiness => {
+  const lengths = sentenceSpans(text).map(
+    (span) => countWordsIn(text.slice(span.start, span.end)),
+  )
+  const sentences = lengths.length
+  if (sentences === 0) return { value: 1, sentences: 0, mean: 0 }
+  const mean = lengths.reduce((sum, n) => sum + n, 0) / sentences
+  if (mean === 0) return { value: 1, sentences, mean }
+  const variance =
+    lengths.reduce((sum, n) => sum + (n - mean) * (n - mean), 0) / sentences
+  return { value: Math.sqrt(variance) / mean, sentences, mean }
+}
+
+// Type-token ratio: unique words divided by total words. It falls
+// naturally as any text gets longer, so the band depends on length
+// and the signal is supporting only — it never decides a score on
+// its own. Bands calibrated on the P2 corpus: clean text of 80–200
+// words measures 0.65–0.71, while a 150-word draft that repeats the
+// same few words measures 0.08.
+export const ttrBandFor = (words: number): number =>
+  words < 200 ? 0.45 : words < 500 ? 0.4 : 0.35
+
+export const TTR_MIN_WORDS = 80
+
+export const ttrOf = (text: string): number => {
+  const words = wordsIn(text)
+  if (words.length === 0) return 1
+  return new Set(words).size / words.length
+}
+
+// Words that carry no content on their own. A bigram counts as
+// repetition only when at least one of its words is not in this set:
+// "of the" repeated ten times is grammar, "the team" repeated ten
+// times is a narrow vocabulary.
+const STOPWORDS = new Set([
+  'a', 'an', 'the', 'of', 'to', 'in', 'on', 'at', 'by', 'for', 'with',
+  'from', 'as', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be',
+  'been', 'being', 'it', 'its', 'this', 'that', 'these', 'those', 'i',
+  'you', 'he', 'she', 'we', 'they', 'his', 'her', 'our', 'their', 'my',
+  'your', 'me', 'him', 'us', 'them', 'who', 'which', 'what', 'when',
+  'where', 'how', 'why', 'not', 'no', 'if', 'then', 'than', 'so',
+  'such', 'into', 'over', 'under', 'between', 'through', 'after',
+  'before', 'during', 'up', 'down', 'out', 'about', 'more', 'most',
+  'other', 'some', 'any', 'all', 'each', 'one', 'two', 'can', 'could',
+  'will', 'would', 'should', 'may', 'might', 'must', 'shall', 'do',
+  'does', 'did', 'have', 'has', 'had', 'am', 'an',
+])
+
 // A number is exempt only with a real citation next to it. The words
 // "data" and "per" on their own never count, and neither does a bare
 // mention of a report. A citation is either a link that looks like
@@ -266,12 +405,26 @@ const hasEvidenceLink = (
   text: string,
   start: number,
   end: number,
+  spans?: SentenceSpan[],
 ): boolean => {
   for (const { start: urlStart, raw } of urls) {
+    const url = raw.replace(/[),.;:!?]+$/, '')
+    // A real evidence link may sit in the sentence after the number —
+    // "We grew 500% last year. The full details are in the report at
+    // https://example.com/reports/survey-2024" — so when the sentence
+    // spans are known, a link whose path names evidence clears a number
+    // in its own sentence or the one before it. A pricing or homepage
+    // link never clears, wherever it sits.
+    if (spans && EVIDENCE_PATH_WORD.test(url)) {
+      const numberSentence = sentenceIndexAt(spans, start)
+      const urlSentence = sentenceIndexAt(spans, urlStart)
+      if (urlSentence - numberSentence === 0 || urlSentence - numberSentence === 1) {
+        return true
+      }
+    }
     if (urlStart < start - CITATION_WINDOW || urlStart > end + CITATION_WINDOW) {
       continue
     }
-    const url = raw.replace(/[),.;:!?]+$/, '')
     if (EVIDENCE_PATH_WORD.test(url)) return true
     const before = text.slice(Math.max(0, urlStart - 40), urlStart)
     const after = text.slice(urlStart + raw.length, urlStart + raw.length + 40)
@@ -324,7 +477,10 @@ const hasCitationNear = (
   text: string,
   start: number,
   end: number,
-): boolean => hasEvidenceLink(urls, text, start, end) || hasNamedCitation(text, start, end)
+  spans?: SentenceSpan[],
+): boolean =>
+  hasEvidenceLink(urls, text, start, end, spans) ||
+  hasNamedCitation(text, start, end)
 
 // The social-proof phrases, shared by the rule below and by the number
 // rules: a number that is the crowd in one of these claims — "Trusted
@@ -334,7 +490,7 @@ const hasCitationNear = (
 // "more than", or "about" in between. "Join a million happy readers"
 // is not covered: no social-proof phrase matches it, so the number
 // still counts on its own.
-const SOCIAL_PROOF_PHRASES = [
+export const SOCIAL_PROOF_PHRASES = [
   'trusted by',
   'loved by',
   'used by',
@@ -342,6 +498,13 @@ const SOCIAL_PROOF_PHRASES = [
   'join millions',
   'join over',
   'join 10,000',
+  'join the thousands',
+  'loved by millions',
+  'trusted by millions',
+  'used by millions',
+  'join the millions',
+  'loved by thousands',
+  'trusted by thousands',
 ]
 
 const socialProofScan = matchPhrases(SOCIAL_PROOF_PHRASES)
@@ -410,6 +573,181 @@ const hasPercentClaimContext = (
   return wordsIn(body).some((word) => CLAIM_VERBS.has(word))
 }
 
+// A reporting sentence measures something instead of selling it:
+// "Unemployment increased 2%", "Revenue grew 12% year over year".
+// The sentence names a measured subject and a change verb, so its
+// percentages are data, not claims — a news or earnings sentence is
+// not a selling claim even when it uses a claim verb like "grew".
+const REPORTING_SUBJECTS = new Set([
+  'unemployment',
+  'revenue',
+  'revenues',
+  'inflation',
+  'sales',
+  'profit',
+  'profits',
+  'loss',
+  'losses',
+  'price',
+  'prices',
+  'gdp',
+  'exports',
+  'imports',
+  'wages',
+  'shares',
+  'stock',
+  'market',
+  'economy',
+  'turnout',
+  'voters',
+  'polling',
+  'weather',
+  'temperature',
+  'rainfall',
+  'earnings',
+  'income',
+  'turnover',
+  'demand',
+  'supply',
+  'interest',
+  'rates',
+  'mortgage',
+  'rent',
+  'housing',
+  'energy',
+  'oil',
+  'gas',
+  'electricity',
+  'crime',
+  'births',
+  'deaths',
+  'population',
+  'retail',
+  'manufacturing',
+  'services',
+  'jobs',
+  'hiring',
+  'layoffs',
+  'growth',
+])
+
+const CHANGE_VERBS = new Set([
+  'increased',
+  'increases',
+  'increasing',
+  'increase',
+  'grew',
+  'grows',
+  'growing',
+  'rose',
+  'risen',
+  'rises',
+  'rising',
+  'fell',
+  'falls',
+  'falling',
+  'climbed',
+  'climbs',
+  'climbing',
+  'dropped',
+  'drops',
+  'dropping',
+  'reached',
+  'reaches',
+  'reaching',
+  'jumped',
+  'jumps',
+  'surged',
+  'surging',
+  'declined',
+  'declines',
+  'declining',
+  'decreased',
+  'decreases',
+  'decreasing',
+  'gained',
+  'gains',
+  'lost',
+  'loses',
+])
+
+const isReportingSentence = (
+  spans: SentenceSpan[],
+  text: string,
+  start: number,
+): boolean => {
+  const index = sentenceIndexAt(spans, start)
+  const sentence = spans[index]
+  if (!sentence) return false
+  const words = wordsIn(text.slice(sentence.start, sentence.end))
+  return (
+    words.some((word) => REPORTING_SUBJECTS.has(word)) &&
+    words.some((word) => CHANGE_VERBS.has(word))
+  )
+}
+
+// A bare or spelled number only counts as a selling claim when the
+// sentence sells: it speaks as the seller (we / our / us), uses a
+// selling verb, or puts a boast adjective next to the number ("10,000
+// happy users"). "Over a thousand companies across Germany use it
+// every day" has none of these, so it stays clean. A number with a
+// claim noun but no selling context — a date, a measurement, a plain
+// statement — is not a claim.
+const SELLING_SIGNALS = new Set([
+  'we',
+  'our',
+  'us',
+  'join',
+  'trusted',
+  'deliver',
+  'delivers',
+  'serve',
+  'serves',
+  'offer',
+  'offers',
+  'provide',
+  'provides',
+  'guarantee',
+  'guarantees',
+  'promise',
+  'promises',
+])
+
+const BOAST_ADJECTIVES = new Set([
+  'happy',
+  'loyal',
+  'dedicated',
+  'satisfied',
+  'paying',
+  'delighted',
+  'thrilled',
+  'proud',
+])
+
+const hasSellingContext = (
+  spans: SentenceSpan[],
+  text: string,
+  start: number,
+  end: number,
+): boolean => {
+  const index = sentenceIndexAt(spans, start)
+  const sentence = spans[index]
+  if (!sentence) return false
+  const bodyWords = wordsIn(text.slice(sentence.start, sentence.end))
+  if (bodyWords.some((word) => SELLING_SIGNALS.has(word))) return true
+  const rest = text.slice(end, end + 80).split(/[.!?\n]/, 1)[0] ?? ''
+  return wordsIn(rest)
+    .slice(0, 10)
+    .some((word) => BOAST_ADJECTIVES.has(word))
+}
+
+// "100% FREE" is a price statement, not a selling claim: the number
+// is what the thing costs, not a boast about how many people use it.
+const isPriceFree = (text: string, end: number): boolean => {
+  const rest = text.slice(end, end + 40).split(/[.!?\n]/, 1)[0] ?? ''
+  return wordsIn(rest).slice(0, 3).includes('free')
+}
+
 const unsourcedNumbers = (text: string): RawMatch[] => {
   // The link list, the social-proof spans, and the sentence spans are
   // computed once here and passed down: recomputing any of them for
@@ -424,29 +762,45 @@ const unsourcedNumbers = (text: string): RawMatch[] => {
   for (const match of text.matchAll(/\b\d[\d,.]*\s?(?:%|\bpercent\b)/gi)) {
     const start = match.index ?? 0
     const end = start + match[0].length
-    if (hasCitationNear(urls, text, start, end)) continue
+    if (hasCitationNear(urls, text, start, end, spans)) continue
     if (isPartOfSocialProof(spSpans, text, start)) continue
+    if (isReportingSentence(spans, text, start)) continue
+    if (isPriceFree(text, end)) continue
     if (!hasPercentClaimContext(spans, text, start, end)) continue
     matches.push({ start, end })
   }
   for (const match of text.matchAll(/\b\d[\d,.]*\s?[kmb]\+?\b/gi)) {
     const start = match.index ?? 0
     const end = start + match[0].length
-    if (hasCitationNear(urls, text, start, end)) continue
+    if (hasCitationNear(urls, text, start, end, spans)) continue
     if (isPartOfSocialProof(spSpans, text, start)) continue
+    if (isReportingSentence(spans, text, start)) continue
     matches.push({ start, end })
   }
-  matches.push(...bareClaimNumbers(text, urls, spSpans))
+  // A multiplier claim — "10x faster", "10x cheaper" — is a selling
+  // claim the same way "500%" is, so it counts even without a claim
+  // noun beside it.
+  for (const match of text.matchAll(
+    /\b\d+x\s+(?:faster|cheaper|better|stronger|quicker|smarter|higher|lower)\b/gi,
+  )) {
+    const start = match.index ?? 0
+    const end = start + match[0].length
+    if (hasCitationNear(urls, text, start, end, spans)) continue
+    matches.push({ start, end })
+  }
+  matches.push(...bareClaimNumbers(text, urls, spSpans, spans))
   matches.push(...spelledClaimNumbers(text, urls, spSpans, spans))
   return matches.sort((a, b) => a.start - b.start)
 }
 
 // A bare number only counts when it is a selling claim: a large, round
 // figure about the product — users, customers, growth, accuracy — with
-// no source beside it. A number with context stays clean: "the server
-// handled 10,000 requests", a date, a version, a measurement. The
-// threshold is 1,000, so "500 customers" is left alone, and a plain
-// four-digit year is never a claim.
+// no source beside it and with selling context in the sentence. A
+// number with context stays clean: "the server handled 10,000
+// requests", a date, a version, a measurement, a number in a
+// reporting sentence ("Revenue grew 12%"), and a price statement
+// ("100% FREE"). The threshold is 1,000, so "500 customers" is left
+// alone, and a plain four-digit year is never a claim.
 const CLAIM_NOUNS = new Set([
   'user',
   'users',
@@ -520,12 +874,15 @@ const SPELLED_VALUE: Record<string, number> = {
   ninety: 90,
 }
 
-// True when a claim noun appears within the next few words of the
+// True when a claim noun appears within the next ten words of the
 // number, before the sentence ends. "10,000 happy users" counts;
-// "10,000 requests" does not.
+// "10,000 requests" does not. Ten words, not five, because a claim
+// noun can sit six or more words past the number — "10,000 new users
+// who joined this year" — and the window is still short enough that
+// a noun from the next claim does not leak in.
 const hasClaimNounAfter = (text: string, end: number): boolean => {
   const rest = text.slice(end, end + 80).split(/[.!?\n]/, 1)[0] ?? ''
-  const words = wordsIn(rest).slice(0, 5)
+  const words = wordsIn(rest).slice(0, 10)
   return words.some((word) => CLAIM_NOUNS.has(word))
 }
 
@@ -533,6 +890,7 @@ const bareClaimNumbers = (
   text: string,
   urls: FoundUrl[],
   spSpans: RawMatch[],
+  spans: SentenceSpan[],
 ): RawMatch[] => {
   const pattern =
     /\b\d[\d,]*(?:\.\d+)?(?:\s+(?:thousand|million|billion))?\b/gi
@@ -556,7 +914,9 @@ const bareClaimNumbers = (
       if (year >= 1900 && year <= 2099) continue
     }
     if (!hasClaimNounAfter(text, end)) continue
-    if (hasCitationNear(urls, text, start, end)) continue
+    if (!hasSellingContext(spans, text, start, end)) continue
+    if (isReportingSentence(spans, text, start)) continue
+    if (hasCitationNear(urls, text, start, end, spans)) continue
     if (isPartOfSocialProof(spSpans, text, start)) continue
     matches.push({ start, end })
   }
@@ -574,7 +934,7 @@ const spelledClaimNumbers = (
   spans: SentenceSpan[],
 ): RawMatch[] => {
   const pattern = new RegExp(
-    `\\b(?:${SPELLED_NUMBER_WORD}|a|an)\\s+${SPELLED_MAGNITUDE}\\b`,
+    `\\b(?:${SPELLED_NUMBER_WORD}|a|an)[\\s-]+${SPELLED_MAGNITUDE}\\b`,
     'gi',
   )
   const matches: RawMatch[] = []
@@ -582,26 +942,32 @@ const spelledClaimNumbers = (
     const raw = match[0]
     const start = match.index ?? 0
     const end = start + raw.length
-    const [leading, magnitude] = raw.toLowerCase().split(/\s+/)
+    const [leading, magnitude] = raw.toLowerCase().split(/[\s-]+/)
     const value = SPELLED_VALUE[leading] * MAGNITUDE_VALUE[magnitude]
     if (value < 1000) continue
     if (!hasClaimNounAfter(text, end)) continue
-    if (hasCitationNear(urls, text, start, end)) continue
+    if (!hasSellingContext(spans, text, start, end)) continue
+    if (isReportingSentence(spans, text, start)) continue
+    if (hasCitationNear(urls, text, start, end, spans)) continue
     if (isPartOfSocialProof(spSpans, text, start)) continue
     matches.push({ start, end })
   }
   // Spelled-out percentages are claims the same way "500%" is: "We
   // grew five hundred percent last year." They need the same claim
   // context as a digit percentage, so "two percent milk" stays clean.
+  // Hyphens join the number words the same way spaces do:
+  // "five-hundred percent".
   const percentPattern = new RegExp(
-    `\\b(?:(?:${SPELLED_NUMBER_WORD})(?:\\s+${SPELLED_MAGNITUDE})?|(?:a|an)\\s+${SPELLED_MAGNITUDE})\\s+percent\\b`,
+    `\\b(?:(?:${SPELLED_NUMBER_WORD})(?:[\\s-]+${SPELLED_MAGNITUDE})?|(?:a|an)[\\s-]+${SPELLED_MAGNITUDE})[\\s-]+percent\\b`,
     'gi',
   )
   for (const match of text.matchAll(percentPattern)) {
     const start = match.index ?? 0
     const end = start + match[0].length
-    if (hasCitationNear(urls, text, start, end)) continue
+    if (hasCitationNear(urls, text, start, end, spans)) continue
     if (isPartOfSocialProof(spSpans, text, start)) continue
+    if (isReportingSentence(spans, text, start)) continue
+    if (isPriceFree(text, end)) continue
     if (!hasPercentClaimContext(spans, text, start, end)) continue
     matches.push({ start, end })
   }
@@ -887,9 +1253,13 @@ const shoutingCaps = (text: string): RawMatch[] => {
 // separator, not a pause, so "word—word" is left alone. HTML entities
 // for the em dash count the same way. A dash that is document structure
 // rather than a pause is left alone too: a line with no words on it (a
-// markdown table separator or horizontal rule), or a dash between two
-// links (") - [", the separator in a table of contents).
-const emDash = (text: string): RawMatch[] => {
+// markdown table separator or horizontal rule), a dash between two
+// links (") - [", the separator in a table of contents), or a dash
+// that opens a line of dialogue (the French, Russian, and Spanish
+// convention, "— Bonjour"), which is a speaker turn, not a pause.
+// A double hyphen attached to a word — "--json", a command-line flag —
+// is not a pause either.
+const emDashPauses = (text: string): RawMatch[] => {
   const isWordChar = (ch: string | undefined): boolean =>
     ch !== undefined && /[\p{L}\p{N}]/u.test(ch)
   const matches: RawMatch[] = []
@@ -897,11 +1267,27 @@ const emDash = (text: string): RawMatch[] => {
     const start = match.index ?? 0
     const end = start + match[0].length
     if (match[0].startsWith('&')) {
+      // A line-initial entity dash followed by a letter is a dialogue
+      // opener too ("&mdash; Bonjour"), not a pause.
+      const entityLineStart = text.lastIndexOf('\n', start - 1) + 1
+      if (text.slice(entityLineStart, start).trim() === '') {
+        let k = end
+        while (k < text.length && (text[k] === ' ' || text[k] === '\t')) {
+          k += 1
+        }
+        if (k < text.length && /[\p{L}]/u.test(text[k])) continue
+      }
       matches.push({ start, end })
       continue
     }
     const before = start === 0 ? undefined : text[start - 1]
     const after = end >= text.length ? undefined : text[end]
+    // A run of two or more dashes with a word character right after
+    // it and no word character before it is a command-line flag
+    // ("--json"), not a pause.
+    if (match[0].length >= 2 && isWordChar(after) && !isWordChar(before)) {
+      continue
+    }
     if (match[0].length < 2 && isWordChar(before) && isWordChar(after)) {
       continue
     }
@@ -919,6 +1305,18 @@ const emDash = (text: string): RawMatch[] => {
     while (k < lineEnd && (text[k] === ' ' || text[k] === '\t')) k += 1
     const nextNonSpace = k < lineEnd ? text[k] : undefined
     if (prevNonSpace === ')' && nextNonSpace === '[') continue
+    // A dash that opens a line of dialogue — the French, Russian, and
+    // Spanish convention ("— Bonjour, dit-elle.") — is a speaker turn,
+    // not a pause. It is the first non-space character on its line
+    // (prevNonSpace is undefined) and the next non-space character
+    // is a letter. Mid-sentence dashes still count.
+    if (
+      prevNonSpace === undefined &&
+      nextNonSpace !== undefined &&
+      /[\p{L}]/u.test(nextNonSpace)
+    ) {
+      continue
+    }
     matches.push({ start, end })
   }
   // A pair of dashes in one sentence is a single interruption — "She
@@ -939,6 +1337,28 @@ const emDash = (text: string): RawMatch[] => {
     }
   }
   return paired.sort((a, b) => a.start - b.start)
+}
+
+// Density, not presence, is the signal. A single em dash in a short
+// note is a stylistic choice, and dash-heavy literary prose measures
+// around 10 interruptions per 1,000 words. The rule fires only when
+// a draft carries more than 20 pause-dashes per 1,000 words and at
+// least 3 of them. The threshold is calibrated on the P2 corpus — a
+// Twain-style passage at 10 per 1,000 stays clean, a draft that puts
+// a dash in nearly every sentence measures 60+ — and the published
+// human range (3.7–10 per 1,000 in the SlopDetector em-dash study;
+// GPT-4.1 at 10.62) sits well below it. Severity is medium: a dash
+// is a keystroke, not a thought.
+export const EM_DASH_DENSITY_THRESHOLD = 20
+export const EM_DASH_MIN_COUNT = 3
+
+const emDash = (text: string): RawMatch[] => {
+  const pauses = emDashPauses(text)
+  if (pauses.length < EM_DASH_MIN_COUNT) return []
+  const words = countWordsIn(text)
+  if (words === 0) return []
+  const density = (pauses.length / words) * 1000
+  return density > EM_DASH_DENSITY_THRESHOLD ? pauses : []
 }
 
 // The "not just X, but Y" cadence is matched at sentence level, not
@@ -1195,10 +1615,17 @@ const collectLengthRuns = (
 }
 
 const sameLengthSentences = (text: string): RawMatch[] => {
-  const sentences = sentenceSpans(text).map((span) => ({
-    ...span,
-    words: countWordsIn(text.slice(span.start, span.end)),
-  }))
+  // Dialogue lines are turns, not sentences on autopilot: a line
+  // that opens with a dash ("— Bonjour") never counts toward a run
+  // of same-length sentences.
+  const sentences = sentenceSpans(text)
+    .filter(
+      (span) => !/^\s*[—–-]/.test(text.slice(span.start, span.end)),
+    )
+    .map((span) => ({
+      ...span,
+      words: countWordsIn(text.slice(span.start, span.end)),
+    }))
   const strict = collectLengthRuns(sentences, 1, 4)
   const near = collectLengthRuns(sentences, 2, 5).filter(
     (run) => !strict.some((other) => run.start < other.end && other.start < run.end),
@@ -1209,11 +1636,21 @@ const sameLengthSentences = (text: string): RawMatch[] => {
 // Three or more consecutive sentences that open with the same two
 // words: "In the morning, we plan. In the afternoon, we build. In
 // the evening, we ship." One repeated opening is a habit; three in a
-// row is a cadence.
+// row is a cadence. Pronoun-led openings are rhetorical anaphora,
+// not a cadence on autopilot — "I am the storm. I am the fire. I am
+// the light." is a lyric device — so sentences opening with I, we,
+// you, he, she, or they never start or continue a run.
+const PRONOUN_OPENINGS = new Set(['i', 'we', 'you', 'he', 'she', 'they'])
+
 const repeatedOpenings = (text: string): RawMatch[] => {
   const sentences = sentenceSpans(text).map((span) => {
     const words = wordsIn(text.slice(span.start, span.end))
-    return { ...span, opening: words.slice(0, 2).join(' '), words: words.length }
+    return {
+      ...span,
+      opening: words.slice(0, 2).join(' '),
+      first: words[0] ?? '',
+      words: words.length,
+    }
   })
   const matches: RawMatch[] = []
   let run: typeof sentences = []
@@ -1224,7 +1661,11 @@ const repeatedOpenings = (text: string): RawMatch[] => {
     run = []
   }
   for (const sentence of sentences) {
-    if (sentence.words < 3 || sentence.opening === '') {
+    if (
+      sentence.words < 3 ||
+      sentence.opening === '' ||
+      PRONOUN_OPENINGS.has(sentence.first)
+    ) {
       flush()
       continue
     }
@@ -1314,13 +1755,834 @@ const adverbDensity = (text: string): RawMatch[] => {
   )
 }
 
+// Vocabulary and cliché inventories. Exported so the tests can count
+// them: the vocabulary total is the distinct strings across the four
+// vocabulary lists, and the cliché total is the distinct strings
+// across the cliché lists. Every entry is a literal phrase the
+// scanner matches; word forms are listed separately.
+
+export const BUZZWORD_PHRASES = [
+  'ai-powered',
+  'ai powered',
+  'revolutionary',
+  'next-generation',
+  'next generation',
+  'cutting-edge',
+  'cutting edge',
+  'groundbreaking',
+  'unparalleled',
+  'seamless',
+  'seamlessly',
+  'game-changing',
+  'game changing',
+  'game changer',
+  'unleash',
+  'supercharge',
+  'state-of-the-art',
+  'state of the art',
+  'best-in-class',
+  'world-class',
+  'industry-leading',
+  'transformative',
+  'disruptive',
+  'synergy',
+  'synergies',
+  'paradigm shift',
+  'empower',
+  'effortless',
+  'effortlessly',
+  'innovative',
+  'turnkey',
+  'leverage',
+  'elevate your',
+  'take it to the next level',
+  'in today\'s fast-paced world',
+  'seam less',
+  'revo lutionary',
+  'ground breaking',
+  'revolutionize',
+  'revolutionizing',
+  'turbocharge',
+  'turbocharged',
+  'future-proof',
+  'future proof',
+  'next-level',
+  'top-tier',
+  'top tier',
+  'market-leading',
+  'award-winning',
+  'unprecedented',
+  'unmatched',
+  'unrivaled',
+  'unrivalled',
+  'unbeatable',
+  'trailblazing',
+  'skyrocket',
+  'skyrockets',
+  'skyrocketing',
+  'one-of-a-kind',
+  'one of a kind',
+  'second to none',
+  'second-to-none',
+  'like never before',
+  'like no other',
+  'world-changing',
+  'world changing',
+  'bleeding edge',
+  'bleeding-edge',
+  'powered by ai',
+  'ai-driven',
+  'ai driven',
+  'unbelievable',
+  'mind-blowing',
+  'mind blowing',
+  'changes the game',
+  'change the game',
+  'changing the game',
+]
+
+export const AI_TELL_PHRASES = [
+  'delve',
+  'delves',
+  'delving',
+  'tapestry',
+  'furthermore',
+  'moreover',
+  'in conclusion',
+  'embark',
+  'embarks',
+  'embarking',
+  'realm',
+  'navigate',
+  'navigates',
+  'navigating',
+  'it\'s important to note',
+  'it is important to note',
+  'worth noting',
+  'dive into',
+  'in today\'s digital age',
+  'as an ai language model',
+  'welcome to the future of work',
+  'unlock your potential',
+  'unlock your * potential',
+  'join us on this journey',
+  'delved',
+  'embarked',
+  'navigated',
+  'showcase',
+  'showcases',
+  'showcased',
+  'showcasing',
+  'underscore',
+  'underscores',
+  'underscored',
+  'underscoring',
+  'intricate',
+  'intricacies',
+  'intricacy',
+  'meticulous',
+  'meticulously',
+  'commendable',
+  'garner',
+  'garnered',
+  'garnering',
+  'surpass',
+  'surpasses',
+  'surpassing',
+  'boast',
+  'boasts',
+  'boasting',
+]
+
+export const AI_ADJECTIVE_PHRASES = [
+  'crucial',
+  'pivotal',
+  'foster',
+  'fosters',
+  'robust',
+  'landscape',
+  'quintessential',
+  'exemplary',
+  'unwavering',
+  'steadfast',
+  'paramount',
+  'fostered',
+  'fostering',
+]
+
+export const STYLE_WORDS_TIER3 = [
+  'aligns',
+  'emphasizing',
+  'emphasising',
+  'advancements',
+  'pioneering',
+  'notably',
+  'notable',
+  'additionally',
+  'consequently',
+  'ultimately',
+  'undoubtedly',
+  'remarkably',
+  'exceptional',
+  'extraordinary',
+  'profound',
+  'profoundly',
+  'holistic',
+  'invaluable',
+  'indispensable',
+  'comprehensive',
+  'spearheaded',
+  'spearheading',
+  'championed',
+  'orchestrated',
+  'cultivated',
+]
+
+export const OPENER_PHRASES = [
+  'in today\'s world',
+  'in today\'s fast-paced world',
+  'in today\'s online world',
+  'in a world where',
+  'imagine a world',
+  'ever wondered',
+  'we\'ve all been there',
+  'let\'s face it',
+  'here\'s the thing',
+  'in an era of',
+  'picture this',
+  'imagine this',
+  'in the digital age',
+  'in the modern world',
+  'in our modern world',
+  'in this day and age',
+  'have you ever',
+  'what if i told you',
+  'the truth is',
+  'listen up',
+  'dear reader',
+  'once upon a time',
+  'it is no secret that',
+  'there is no denying that',
+  'needless to say',
+  'in a fast-paced world',
+  'in a fast paced world',
+  'in this fast-paced world',
+  'in this fast paced world',
+]
+
+export const FAKE_AUTHORITY_PHRASES = [
+  'studies have shown',
+  'studies show',
+  'studies confirm',
+  'research shows',
+  'research suggests',
+  'research confirms',
+  'experts agree',
+  'experts say',
+  'scientists say',
+  'science says',
+  'data shows',
+  'the data speaks for itself',
+  'it is well known',
+  'it is widely known',
+  'everyone knows',
+  'as we all know',
+  'history shows',
+  'evidence shows',
+  'it has been proven',
+  'doctors recommend',
+]
+
+export const PSEUDO_WISDOM_PHRASES = [
+  'the key is to find balance',
+  'true growth comes from within',
+  'it\'s not about the destination, it\'s about the journey',
+  'success is a journey, not a destination',
+  'at the end of the day',
+  'when it comes down to it',
+  'the bottom line is',
+  'remember to be kind to yourself',
+  'believe in yourself',
+  'anything is possible',
+  'the sky is the limit',
+  'dream big',
+  'stay positive',
+  'good things take time',
+  'life is too short',
+  'follow your dreams',
+  'never give up',
+  'live laugh love',
+]
+
+export const TEMPLATE_CLOSER_PHRASES = [
+  'to sum up',
+  'to summarize',
+  'in summary',
+  'in closing',
+  'all in all',
+  'to wrap up',
+  'wrapping up',
+  'in a nutshell',
+  'long story short',
+  'thanks for reading',
+  'stay tuned',
+  'until next time',
+  'that is all',
+  'let me know what you think',
+]
+
+export const TESTIMONIAL_PHRASES = [
+  'changed my life',
+  'life-changing',
+  '10x our',
+  'best decision we\'ve made',
+  'best decision i\'ve made',
+  'can\'t imagine',
+  'blown away',
+  'a must-have',
+  'game changer for me',
+  'changed the game',
+  'could not be happier',
+  'couldn\'t be happier',
+  'highly recommend',
+  'worth every penny',
+  'best purchase ever',
+  'i wish i had found this sooner',
+  'total game-changer',
+]
+
+export const SUPERLATIVE_PHRASES = [
+  'best tool',
+  'best choice',
+  'ultimate choice',
+  'ultimate tool',
+  'perfect fit',
+  'perfect choice',
+  'best in the world',
+  'best ever',
+  'the very best',
+  'number one',
+  'number 1',
+  'top rated',
+  'top-rated',
+  'highest rated',
+  'most popular',
+  "world's best",
+  'best thing ever',
+]
+
+// Tier-3 style words only count in a cluster: one "notably" in an
+// otherwise clean draft is ordinary writing, but three or more
+// distinct tier-3 terms in one draft is the vocabulary narrowing
+// that machine-written copy shows. A single term, however often
+// repeated, never fires on its own.
+const styleWordsTier3 = (text: string): RawMatch[] => {
+  const matches = matchPhrases(STYLE_WORDS_TIER3)(text)
+  const distinct = new Set(
+    matches.map((match) => text.slice(match.start, match.end).toLowerCase()),
+  )
+  return distinct.size >= 3 ? matches : []
+}
+
+// Some AI tells are ordinary words in their home registers —
+// "furthermore" and "moreover" are academic connective tissue,
+// "delve" is what a historian does in an archive, "tapestry" is
+// what a museum shows, "navigate" is what a sailor does, "showcase"
+// is what an exhibition does. One of them alone is not a signal, so
+// these phrases only count when four or more distinct ones cluster
+// in the same draft: three connectives in one short academic
+// paragraph ("Furthermore… Moreover… In conclusion…") is normal
+// connective tissue, and four distinct tells together is the
+// narrowing that machine-written copy shows. The other AI tells
+// ("underscore", "intricate", "meticulous", "garner", "surpass",
+// "boast", "it's important to note", "worth noting", "as an AI
+// language model", and the rest) are not ordinary in any register,
+// so they fire on their own.
+const CLUSTERED_AI_TELL_PHRASES = [
+  'furthermore',
+  'moreover',
+  'in conclusion',
+  'delve',
+  'delves',
+  'delving',
+  'delved',
+  'tapestry',
+  'navigate',
+  'navigates',
+  'navigating',
+  'navigated',
+  'showcase',
+  'showcases',
+  'showcased',
+  'showcasing',
+  'embark',
+  'embarks',
+  'embarking',
+  'embarked',
+  'realm',
+]
+
+const CLUSTERED_AI_TELL_LEMMA: Record<string, string> = {
+  furthermore: 'furthermore',
+  moreover: 'moreover',
+  'in conclusion': 'in conclusion',
+  delve: 'delve',
+  delves: 'delve',
+  delving: 'delve',
+  delved: 'delve',
+  tapestry: 'tapestry',
+  navigate: 'navigate',
+  navigates: 'navigate',
+  navigating: 'navigate',
+  navigated: 'navigate',
+  showcase: 'showcase',
+  showcases: 'showcase',
+  showcased: 'showcase',
+  showcasing: 'showcase',
+  embark: 'embark',
+  embarks: 'embark',
+  embarking: 'embark',
+  embarked: 'embark',
+  realm: 'realm',
+}
+
+export const CLUSTERED_AI_TELL_MIN_DISTINCT = 4
+
+const aiTells = (text: string): RawMatch[] => {
+  const direct = matchPhrases(
+    AI_TELL_PHRASES.filter(
+      (phrase) => !CLUSTERED_AI_TELL_PHRASES.includes(phrase),
+    ),
+  )(text)
+  const clustered = matchPhrases(CLUSTERED_AI_TELL_PHRASES)(text)
+  const distinct = new Set(
+    clustered.map(
+      (match) =>
+        CLUSTERED_AI_TELL_LEMMA[
+          text.slice(match.start, match.end).toLowerCase()
+        ] ?? text.slice(match.start, match.end).toLowerCase(),
+    ),
+  )
+  return distinct.size >= CLUSTERED_AI_TELL_MIN_DISTINCT
+    ? [...direct, ...clustered]
+    : direct
+}
+
+// The AI adjectives are ordinary words in their home disciplines —
+// "landscape" in geography, "foster" in social work, "crucial" in
+// medicine, "robust" in engineering. One of them alone is not a
+// signal, so they only count when three or more distinct ones
+// appear in the same draft. Two distinct adjectives in a short
+// technical paragraph ("robust" and "landscape" in API docs) is
+// normal vocabulary, not a pile-up.
+const AI_ADJECTIVE_LEMMA: Record<string, string> = {
+  crucial: 'crucial',
+  pivotal: 'pivotal',
+  foster: 'foster',
+  fosters: 'foster',
+  fostered: 'foster',
+  fostering: 'foster',
+  robust: 'robust',
+  landscape: 'landscape',
+  quintessential: 'quintessential',
+  exemplary: 'exemplary',
+  unwavering: 'unwavering',
+  steadfast: 'steadfast',
+  paramount: 'paramount',
+}
+
+export const AI_ADJECTIVE_MIN_DISTINCT = 3
+
+const aiAdjectives = (text: string): RawMatch[] => {
+  const matches = matchPhrases(AI_ADJECTIVE_PHRASES)(text)
+  const distinct = new Set(
+    matches.map(
+      (match) =>
+        AI_ADJECTIVE_LEMMA[
+          text.slice(match.start, match.end).toLowerCase()
+        ] ?? text.slice(match.start, match.end).toLowerCase(),
+    ),
+  )
+  return distinct.size >= AI_ADJECTIVE_MIN_DISTINCT ? matches : []
+}
+
+// Authority claims that gesture at evidence with none attached.
+// A claim is cited when a link that looks like evidence, or a named
+// publication with a year, sits near it — the same citation test the
+// number rules use. The rule fires only when more than half of the
+// authority claims in the draft are uncited: one uncited claim in a
+// piece that otherwise cites its sources is a miss, not a pattern.
+const fakeAuthority = (text: string): RawMatch[] => {
+  const urls: FoundUrl[] = [...text.matchAll(URL_GLOBAL)].map((match) => ({
+    start: match.index ?? 0,
+    raw: match[0],
+  }))
+  const spans = sentenceSpans(text)
+  const claims = matchPhrases(FAKE_AUTHORITY_PHRASES)(text)
+  if (claims.length === 0) return []
+  const uncited = claims.filter(
+    (claim) => !hasCitationNear(urls, text, claim.start, claim.end, spans),
+  )
+  // A claim is also cited when the sentence names who said it: a
+  // capitalised name that is not just a sentence starter. The first
+  // word of a sentence is capitalised because it starts the sentence,
+  // not because it names anyone, so it never counts.
+  const stillUncited = uncited.filter((claim) => {
+    const index = sentenceIndexAt(spans, claim.start)
+    const sentence = spans[index]
+    if (!sentence) return true
+    const body = text.slice(sentence.start, sentence.end)
+    const names = [...body.matchAll(/\b[A-Z][\p{L}]+/gu)]
+      .map((m) => ({ word: m[0], at: m.index ?? 0 }))
+      .filter(
+        ({ word, at }) =>
+          !SENTENCE_START_WORDS.has(word) &&
+          body.slice(0, at).trim() !== '',
+      )
+    return names.length === 0
+  })
+  // Any uncited claim fires: one made-up authority in a draft of three
+  // claims is still a made-up authority. The old rule needed more than
+  // half the claims uncited, so a single fake citation in a mostly
+  // honest draft slipped through.
+  return stillUncited
+}
+
+// Sentences that survive deletion with zero information loss. The
+// delete test is a heuristic here: a fixed list of stock
+// pseudo-profound sentences, counted per sentence. It fires only
+// when at least a third of the sentences in a passage of at least
+// three sentences are filler, and at least two sentences are filler
+// — one platitude in a short note is not a pattern. The threshold is
+// inclusive: exactly a third (two of six) fires, because the ratio is
+// the same shape of pattern either side of the line.
+const pseudoWisdom = (text: string): RawMatch[] => {
+  const spans = sentenceSpans(text)
+  if (spans.length < 3) return []
+  const matches = matchPhrases(PSEUDO_WISDOM_PHRASES)(text)
+  if (matches.length === 0) return []
+  const fillerSentences = new Set<number>()
+  for (const match of matches) {
+    fillerSentences.add(sentenceIndexAt(spans, match.start))
+  }
+  return fillerSentences.size >= 2 &&
+    fillerSentences.size / spans.length >= 1 / 3
+    ? matches
+    : []
+}
+
+// Burstiness and type-token ratio, shared by the scan and the
+// penalty: the scan decides whether the signal fires, the penalty
+// scales with how far past the threshold the measurement sits.
+const burstinessScan = (text: string): RawMatch[] => {
+  const clean = stripFormalSentences(text)
+  const words = countWordsIn(clean)
+  if (words < BURSTINESS_MIN_WORDS) return []
+  const { value, sentences, mean } = burstinessOf(clean)
+  if (
+    sentences < BURSTINESS_MIN_SENTENCES ||
+    mean >= BURSTINESS_MAX_MEAN_LENGTH ||
+    value >= BURSTINESS_THRESHOLD
+  ) {
+    return []
+  }
+  return [{ start: 0, end: text.length }]
+}
+
+const burstinessPenalty = (
+  _matches: RawMatch[],
+  _words: number,
+  text: string,
+): number => {
+  const { value } = burstinessOf(stripFormalSentences(text))
+  const depth = (BURSTINESS_THRESHOLD - value) / BURSTINESS_THRESHOLD
+  return severityWeight.low * 2.5 * Math.max(0, Math.min(1, depth))
+}
+
+const lowTtrScan = (text: string): RawMatch[] => {
+  const clean = stripFormalSentences(text)
+  const words = countWordsIn(clean)
+  if (words < TTR_MIN_WORDS) return []
+  return ttrOf(clean) < ttrBandFor(words)
+    ? [{ start: 0, end: text.length }]
+    : []
+}
+
+const lowTtrPenalty = (
+  _matches: RawMatch[],
+  _words: number,
+  text: string,
+): number => {
+  const clean = stripFormalSentences(text)
+  const cleanWords = countWordsIn(clean)
+  const band = ttrBandFor(cleanWords)
+  const depth = (band - ttrOf(clean)) / band
+  return severityWeight.low * 2.5 * Math.max(0, Math.min(1, depth))
+}
+
+// The same two-word pair, repeated. Both words being stopwords does
+// not count — "of the" repeated is grammar — but a pair with a
+// content word in it, repeated three or more times in a draft of at
+// least 80 words, is a narrow vocabulary. Formal sentences are
+// exempt per sentence: a contract repeats its defined terms on
+// purpose, but one legal sentence does not exempt the rest of the
+// draft. Tokens inside formal sentences are dropped, and pairs are
+// never formed across a dropped sentence.
+const repeatedBigrams = (text: string): RawMatch[] => {
+  const spans = sentenceSpans(text)
+  // Which sentences are formal is computed once per sentence, not
+  // once per token: a 20,000-word single sentence would otherwise
+  // re-test the whole sentence for every token.
+  const formalSentences = new Set<number>()
+  spans.forEach((span, index) => {
+    if (isFormalSentence(text.slice(span.start, span.end))) {
+      formalSentences.add(index)
+    }
+  })
+  const tokens: Array<{
+    word: string
+    start: number
+    end: number
+    sentence: number
+  }> = []
+  for (const match of text.matchAll(/[\p{L}\p{N}'’]+/gu)) {
+    const start = match.index ?? 0
+    const sentence = sentenceIndexAt(spans, start)
+    if (sentence < 0 || formalSentences.has(sentence)) continue
+    tokens.push({
+      word: (match[0] ?? '').toLowerCase(),
+      start,
+      end: start + (match[0] ?? '').length,
+      sentence,
+    })
+  }
+  if (tokens.length < TTR_MIN_WORDS) return []
+  const counts = new Map<string, number>()
+  for (let i = 0; i + 1 < tokens.length; i += 1) {
+    if (tokens[i + 1].sentence - tokens[i].sentence > 1) continue
+    const a = tokens[i].word
+    const b = tokens[i + 1].word
+    if (STOPWORDS.has(a) && STOPWORDS.has(b)) continue
+    const key = `${a} ${b}`
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  const repeated = new Set(
+    [...counts.entries()].filter(([, n]) => n >= 3).map(([key]) => key),
+  )
+  if (repeated.size === 0) return []
+  const matches: RawMatch[] = []
+  for (let i = 0; i + 1 < tokens.length; i += 1) {
+    if (tokens[i + 1].sentence - tokens[i].sentence > 1) continue
+    const key = `${tokens[i].word} ${tokens[i + 1].word}`
+    if (repeated.has(key)) {
+      matches.push({ start: tokens[i].start, end: tokens[i + 1].end })
+    }
+  }
+  return matches
+}
+
+// Paragraphs that open with a formal transition: furthermore,
+// moreover, additionally, ultimately, and the rest. One is fine.
+// When at least half of a piece's paragraphs open that way, the
+// joins are doing the thinking. Needs at least three paragraphs.
+// The threshold is inclusive: exactly half (two of four) fires,
+// because the ratio is the same shape of pattern either side of
+// the line.
+const TRANSITION_OPENERS = new Set([
+  'furthermore', 'moreover', 'additionally', 'ultimately',
+  'consequently', 'therefore', 'however', 'meanwhile',
+  'nevertheless', 'nonetheless', 'firstly', 'secondly', 'thirdly',
+  'finally', 'overall', 'in conclusion', 'in summary', 'in addition',
+])
+
+const transitionStacking = (text: string): RawMatch[] => {
+  const paragraphs = paragraphSpans(text).filter(
+    (span) => countWordsIn(text.slice(span.start, span.end)) >= 3,
+  )
+  if (paragraphs.length < 3) return []
+  const openers: RawMatch[] = []
+  for (const paragraph of paragraphs) {
+    const body = text.slice(paragraph.start, paragraph.end)
+    const firstWords = wordsIn(body).slice(0, 2)
+    const twoWord = firstWords.join(' ')
+    const oneWord = firstWords[0] ?? ''
+    if (TRANSITION_OPENERS.has(twoWord)) {
+      const at = body.toLowerCase().indexOf(twoWord)
+      openers.push({
+        start: paragraph.start + at,
+        end: paragraph.start + at + twoWord.length,
+      })
+    } else if (TRANSITION_OPENERS.has(oneWord)) {
+      const at = body.toLowerCase().indexOf(oneWord)
+      openers.push({
+        start: paragraph.start + at,
+        end: paragraph.start + at + oneWord.length,
+      })
+    }
+  }
+  return openers.length / paragraphs.length >= 0.5 ? openers : []
+}
+
+// A paragraph is substantive when it carries at least one concrete
+// fact: a name, a number with context, or a cause tied to an
+// outcome. A date alone is not a fact — "In January, everything
+// changes" says nothing specific — and neither is a cause on its
+// own: "because it helps teams" is a claim, not a fact. A number
+// only counts when it is not an unsourced boast: "10,000 happy
+// users" is the claim being checked, not evidence for the
+// paragraph. Fires only when more than half of the paragraphs in
+// a text of at least three paragraphs and 80 words fail the test.
+const CAUSE_OR_TRADEOFF =
+  /\b(?:because|since|due to|instead of|rather than|compared to|compared with|versus|trade-?off|in exchange for)\b/i
+
+// Month and weekday names are dates, not names: "In January,
+// everything changes" must not pass the name test, or a date alone
+// would still count as substance.
+const DATE_WORDS = new Set([
+  'january', 'february', 'march', 'april', 'may', 'june', 'july',
+  'august', 'september', 'october', 'november', 'december',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+  'saturday', 'sunday',
+])
+
+const paragraphHasConcreteFact = (
+  paragraph: string,
+  unsourced: RawMatch[],
+  offset: number,
+): boolean => {
+  // A name: a capitalised word that is not the first word of a
+  // sentence and not a word that is capitalised only because it
+  // starts a sentence. Month and weekday names do not count.
+  const hasName = (body: string): boolean => {
+    const spans = sentenceSpans(body)
+    for (const match of body.matchAll(/\b[A-Z][\p{L}]+/gu)) {
+      const word = match[0]
+      if (SENTENCE_START_WORDS.has(word)) continue
+      if (DATE_WORDS.has(word.toLowerCase())) continue
+      const pos = match.index ?? 0
+      const sentence = spans[sentenceIndexAt(spans, pos)]
+      if (!sentence) continue
+      const before = body.slice(sentence.start, pos).trim()
+      if (before === '') continue
+      return true
+    }
+    return false
+  }
+  if (hasName(paragraph)) return true
+  // A cause or trade-off only counts when it is tied to an outcome:
+  // the same sentence has to carry a number or a name. "Because it
+  // helps teams" is a claim; "because latency fell from 400ms to
+  // 90ms" is a fact.
+  const sentences = sentenceSpans(paragraph)
+  for (const sentence of sentences) {
+    const body = paragraph.slice(sentence.start, sentence.end)
+    if (!CAUSE_OR_TRADEOFF.test(body)) continue
+    if (/\d/.test(body) || hasName(body)) return true
+  }
+  // A number with context: any number that the unsourced-number rule
+  // does not flag, except a bare four-digit year, which is a date.
+  for (const match of paragraph.matchAll(/\b\d[\d,.]*\s?(?:%|\bpercent\b|\s?[kmb]\+?)?\b/gi)) {
+    const raw = match[0].replace(/,/g, '')
+    if (/^\d{4}$/.test(raw)) {
+      const year = Number.parseInt(raw, 10)
+      if (year >= 1900 && year <= 2099) continue
+    }
+    const start = offset + (match.index ?? 0)
+    const end = start + match[0].length
+    const flagged = unsourced.some(
+      (span) => start >= span.start && end <= span.end,
+    )
+    if (!flagged) return true
+  }
+  return false
+}
+
+const thinSubstance = (text: string): RawMatch[] => {
+  const words = countWordsIn(text)
+  const paragraphs = paragraphSpans(text).filter(
+    (span) => countWordsIn(text.slice(span.start, span.end)) >= 10,
+  )
+  if (paragraphs.length < 3 || words < TTR_MIN_WORDS) return []
+  const unsourced = unsourcedNumbers(text)
+  const failing = paragraphs.filter(
+    (span) =>
+      !paragraphHasConcreteFact(
+        text.slice(span.start, span.end),
+        unsourced,
+        span.start,
+      ),
+  )
+  return failing.length / paragraphs.length > 0.5 ? failing : []
+}
+
+// The rule of three on autopilot: everything arrives in tidy
+// triplets. Two shapes are caught: "more X, more Y, more Z", and a
+// triplet of single-word adjectives ("efficient, scalable, and
+// reliable"). Ordinary lists are not caught: "apples, oranges, and
+// bananas" is nouns, not adjectives. The two shapes have different
+// bars: "more X, more Y, more Z" is a marketing cadence, so two of
+// them fire, but an adjective triplet is also a literary device —
+// two triplets in 22 words is a paragraph, not a pattern — so
+// adjective triplets need three. Either shape still needs the
+// density gate: more than one triplet per 200 words.
+const ADJECTIVE_TRIPLET_WORD = new Set([
+  'efficient', 'scalable', 'reliable', 'fast', 'secure', 'simple',
+  'powerful', 'flexible', 'robust', 'seamless', 'intuitive', 'modern',
+  'smart', 'agile', 'dynamic', 'innovative', 'cutting-edge', 'elegant',
+])
+
+const isAdjectiveLike = (word: string): boolean =>
+  ADJECTIVE_TRIPLET_WORD.has(word) ||
+  /(?:able|ible|ive|ous|al|ic|ful|less|ed|ing|ly)$/.test(word)
+
+const ruleOfThree = (text: string): RawMatch[] => {
+  const words = countWordsIn(text)
+  const spans = sentenceSpans(text)
+  const moreMatches: RawMatch[] = []
+  const adjMatches: RawMatch[] = []
+  const morePattern =
+    /\bmore\s+[\p{L}]+,\s*more\s+[\p{L}]+,\s*and\s+more\s+[\p{L}]+/giu
+  const adjPattern =
+    /\b([\p{L}]+),\s*([\p{L}]+),\s*and\s+([\p{L}]+)\b/giu
+  for (const span of spans) {
+    const body = text.slice(span.start, span.end)
+    for (const match of body.matchAll(morePattern)) {
+      moreMatches.push({
+        start: span.start + (match.index ?? 0),
+        end: span.start + (match.index ?? 0) + match[0].length,
+      })
+    }
+    for (const match of body.matchAll(adjPattern)) {
+      const items = [match[1], match[2], match[3]].map((w) =>
+        w.toLowerCase(),
+      )
+      if (items.every(isAdjectiveLike)) {
+        adjMatches.push({
+          start: span.start + (match.index ?? 0),
+          end: span.start + (match.index ?? 0) + match[0].length,
+        })
+      }
+    }
+  }
+  const unique = [...moreMatches, ...adjMatches].filter(
+    (match, index, all) =>
+      all.findIndex(
+        (other) => other.start === match.start && other.end === match.end,
+      ) === index,
+  )
+  const fires =
+    (moreMatches.length >= 2 || adjMatches.length >= 3) &&
+    unique.length > words / 200
+  return fires ? unique : []
+}
+
 export const rules: RuleDefinition[] = [
   {
     id: 'em-dash',
     label: 'Em dash',
     group: 'voice',
-    severity: 'high',
-    note: 'The single loudest punctuation tell in machine-written copy. A pair of dashes that opens and closes one interruption counts once, not twice.',
+    severity: 'medium',
+    note: 'Em dashes only count at density: more than 20 pause-dashes per 1,000 words, and at least 3 of them. One dash in a short note, dash-heavy literary prose at 10 per 1,000, and command-line flags such as --json are left alone. A dash that opens a line of dialogue (— Bonjour) is a speaker turn, not a pause. A pair of dashes that opens and closes one interruption counts once, not twice.',
     fix: 'Use a comma, colon, period, or parentheses.',
     scan: emDash,
   },
@@ -1331,99 +2593,34 @@ export const rules: RuleDefinition[] = [
     severity: 'medium',
     note: 'Words that sell a feeling instead of naming a capability.',
     fix: 'Swap in a concrete capability, or delete the word.',
-    scan: matchPhrases([
-      'ai-powered',
-      'ai powered',
-      'revolutionary',
-      'next-generation',
-      'next generation',
-      'cutting-edge',
-      'cutting edge',
-      'groundbreaking',
-      'unparalleled',
-      'seamless',
-      'seamlessly',
-      'game-changing',
-      'game changing',
-      'game changer',
-      'unleash',
-      'supercharge',
-      'state-of-the-art',
-      'state of the art',
-      'best-in-class',
-      'world-class',
-      'industry-leading',
-      'transformative',
-      'disruptive',
-      'synergy',
-      'synergies',
-      'paradigm shift',
-      'empower',
-      'effortless',
-      'effortlessly',
-      'innovative',
-      'turnkey',
-      'leverage',
-      'elevate your',
-      'take it to the next level',
-      "in today's fast-paced world",
-      // Split spellings of listed words. "seam less" and
-      // "revo lutionary" are not real phrases, only the listed words
-      // with a space in the middle, so they belong to this rule.
-      'seam less',
-      'revo lutionary',
-      'ground breaking',
-    ]),
+    scan: matchPhrases(BUZZWORD_PHRASES),
   },
   {
     id: 'ai-tells',
     label: 'AI tell phrases',
     group: 'voice',
     severity: 'medium',
-    note: 'Stock phrases that show up in machine-written copy far more often than in human writing.',
+    note: 'Stock phrases that show up in machine-written copy far more often than in human writing. The clustered tells (furthermore, moreover, in conclusion, delve, tapestry, navigate, showcase, embark, realm) only count when four or more distinct ones appear in one draft, because each is ordinary in its home register; the rest fire on their own.',
     fix: 'Delete the phrase, or say what actually happened.',
-    scan: matchPhrases([
-      'delve',
-      'delves',
-      'delving',
-      'tapestry',
-      'furthermore',
-      'moreover',
-      'in conclusion',
-      'embark',
-      'embarks',
-      'embarking',
-      'realm',
-      'navigate',
-      'navigates',
-      'navigating',
-      "it's important to note",
-      'it is important to note',
-      'worth noting',
-      'dive into',
-      "in today's digital age",
-      'as an ai language model',
-      'welcome to the future of work',
-      'unlock your potential',
-      'unlock your * potential',
-      'join us on this journey',
-    ]),
+    scan: aiTells,
   },
   {
     id: 'ai-adjectives',
     label: 'AI adjectives',
     group: 'voice',
     severity: 'low',
-    note: 'Confident adjectives that fill space without adding anything specific.',
+    note: 'Confident adjectives that fill space without adding anything specific. Only counts when three or more distinct adjectives appear in one draft, because each is ordinary in its home discipline.',
     fix: 'Name the specific quality, or delete the word.',
-    scan: matchPhrases([
-      'crucial',
-      'pivotal',
-      'foster',
-      'fosters',
-      'robust',
-      'landscape',
-    ]),
+    scan: aiAdjectives,
+  },
+  {
+    id: 'style-words',
+    label: 'Style words in a cluster',
+    group: 'voice',
+    severity: 'low',
+    note: 'Formal style words (notably, additionally, holistic, pioneering) that are ordinary on their own. They only count when three or more distinct ones appear in the same draft — the clustering, not the word, is the signal.',
+    fix: 'Use the plain word, or say what actually happened.',
+    scan: styleWordsTier3,
   },
   {
     id: 'overused-opener',
@@ -1432,18 +2629,16 @@ export const rules: RuleDefinition[] = [
     severity: 'low',
     note: 'An opening move copied from a thousand landing pages.',
     fix: 'Start with the claim itself.',
-    scan: matchPhrases([
-      "in today's world",
-      "in today's fast-paced world",
-      "in today's online world",
-      'in a world where',
-      'imagine a world',
-      'ever wondered',
-      "we've all been there",
-      "let's face it",
-      "here's the thing",
-      'in an era of',
-    ]),
+    scan: matchPhrases(OPENER_PHRASES),
+  },
+  {
+    id: 'template-closer',
+    label: 'Template closer',
+    group: 'voice',
+    severity: 'low',
+    note: 'A stock sign-off that wraps a piece up without saying anything: to sum up, in summary, stay tuned, thanks for reading.',
+    fix: 'End on the claim itself, or just stop.',
+    scan: matchPhrases(TEMPLATE_CLOSER_PHRASES),
   },
   {
     id: 'not-just',
@@ -1470,7 +2665,7 @@ export const rules: RuleDefinition[] = [
     label: 'Unsourced number',
     group: 'claims',
     severity: 'medium',
-    note: 'A figure with no source beside it is decoration, not evidence. That includes a large round number used as a selling claim, such as 10,000 happy users, with or without a percent sign. A percentage only counts when it is a claim — a claim noun or a claim verb nearby — so a plain measurement stays clean. A citation has to be a link that looks like evidence, or a named publication with a year.',
+    note: 'A figure with no source beside it is decoration, not evidence. That includes a large round number used as a selling claim, such as 10,000 happy users, with or without a percent sign. A percentage only counts when it is a claim — a claim noun or a claim verb nearby — so a plain measurement stays clean. A number in a reporting sentence (unemployment, revenue, inflation with a change verb) is data, not a claim, and a price statement ("100% FREE") is not a claim either. A citation has to be a link that looks like evidence, or a named publication with a year; an evidence link in the next sentence also counts.',
     fix: 'Link the source, or cut the number.',
     scan: unsourcedNumbers,
   },
@@ -1499,16 +2694,7 @@ export const rules: RuleDefinition[] = [
     severity: 'medium',
     note: 'Stock praise reads as invented, even when the quote is real.',
     fix: 'Quote a named customer with a source, or cut the section.',
-    scan: matchPhrases([
-      'changed my life',
-      'life-changing',
-      '10x our',
-      "best decision we've made",
-      "best decision i've made",
-      "can't imagine",
-      'blown away',
-      'a must-have',
-    ]),
+    scan: matchPhrases(TESTIMONIAL_PHRASES),
   },
   {
     id: 'vague-superlative',
@@ -1517,14 +2703,16 @@ export const rules: RuleDefinition[] = [
     severity: 'medium',
     note: 'A claim of being the best, with no comparison and no proof.',
     fix: 'Say what is actually better, and compared to what.',
-    scan: matchPhrases([
-      'best tool',
-      'best choice',
-      'ultimate choice',
-      'ultimate tool',
-      'perfect fit',
-      'perfect choice',
-    ]),
+    scan: matchPhrases(SUPERLATIVE_PHRASES),
+  },
+  {
+    id: 'fake-authority',
+    label: 'Uncited authority claim',
+    group: 'claims',
+    severity: 'medium',
+    note: 'A gesture at evidence with no evidence attached: studies have shown, experts agree, research suggests. A claim that names its source — a link that looks like evidence, a named publication with a year, or the person who said it — is left alone. Any uncited claim fires.',
+    fix: 'Name the study, the expert, or the number — or cut the claim.',
+    scan: fakeAuthority,
   },
   {
     id: 'generic-cta',
@@ -1567,7 +2755,7 @@ export const rules: RuleDefinition[] = [
     label: 'Repeated sentence openings',
     group: 'structure',
     severity: 'low',
-    note: 'Three or more sentences in a row that open with the same two words.',
+    note: 'Three or more sentences in a row that open with the same two words. Pronoun-led openings (I am, We are) are rhetorical anaphora and are left alone.',
     fix: 'Vary the openings, or merge the sentences.',
     scan: repeatedOpenings,
   },
@@ -1579,6 +2767,71 @@ export const rules: RuleDefinition[] = [
     note: 'A sentence carrying three or more -ly adverbs leans on emphasis instead of saying anything specific. Two adjacent sentences carrying two each count the same way.',
     fix: 'Keep the strongest adverb, or name what actually happened.',
     scan: adverbDensity,
+  },
+  {
+    id: 'rule-of-three',
+    label: 'Rule of three on autopilot',
+    group: 'structure',
+    severity: 'low',
+    note: 'Everything arrives in tidy triplets: more X, more Y, more Z, or three single-word adjectives in a row. The "more" shape fires at two triplets; adjective triplets need three, because two triplets is also a literary paragraph. Either way the count has to be more than one per 200 words. Ordinary lists of nouns are not caught.',
+    fix: 'Say the one thing that matters, or give the list a reason to exist.',
+    scan: ruleOfThree,
+  },
+  {
+    id: 'burstiness',
+    label: 'Flat sentence rhythm',
+    group: 'diversity',
+    severity: 'low',
+    note: 'Sentence after sentence landing at almost the same length: burstiness (standard deviation of sentence lengths divided by the mean) under 0.12, with at least 8 sentences, at least 80 words, and a mean sentence under 16 words. Legal text and technical documentation are exempt — their uniformity is the genre. The threshold is calibrated on the P2 corpus, where clean human text measures 0.17–0.35.',
+    fix: 'Vary the lengths: shorten one sentence, lengthen another.',
+    scan: burstinessScan,
+    penaltyFor: burstinessPenalty,
+  },
+  {
+    id: 'low-ttr',
+    label: 'Narrow vocabulary range',
+    group: 'diversity',
+    severity: 'low',
+    note: 'The text keeps reaching for the same words: type-token ratio (unique words divided by total words) below 0.45 under 200 words, 0.40 under 500, and 0.35 above that. A supporting signal only — it never decides a score on its own — and it does not fire under 80 words or in legal and technical text.',
+    fix: 'Use the specific word for each thing instead of the same few words.',
+    scan: lowTtrScan,
+    penaltyFor: lowTtrPenalty,
+  },
+  {
+    id: 'repeated-bigrams',
+    label: 'Repeated word pairs',
+    group: 'diversity',
+    severity: 'low',
+    note: 'The same two-word pair, with a content word in it, three or more times in a draft of at least 80 words. Pairs of pure stopwords (of the) do not count. Legal and technical text is exempt.',
+    fix: 'Vary the phrasing, or cut the repetition.',
+    scan: repeatedBigrams,
+  },
+  {
+    id: 'transition-stacking',
+    label: 'Transition stacking',
+    group: 'diversity',
+    severity: 'low',
+    note: 'At least half of a piece’s paragraphs open with a formal transition word (furthermore, moreover, additionally, ultimately). Needs at least three paragraphs.',
+    fix: 'Open paragraphs with the point, not the join.',
+    scan: transitionStacking,
+  },
+  {
+    id: 'thin-substance',
+    label: 'Substance-poor paragraphs',
+    group: 'substance',
+    severity: 'medium',
+    note: 'More than half of the paragraphs carry no concrete fact — no name, no number with context, no cause tied to an outcome. A date alone does not count, and neither does a cause on its own: "In January, everything changes" and "because it helps teams" say nothing specific. A bare boastful number does not count as a fact: 99.9% uptime is the claim being checked, not evidence. Needs at least three paragraphs of at least 10 words each, and 80 words in total.',
+    fix: 'Give each paragraph one concrete thing: a name, a date, a sourced number, a cause.',
+    scan: thinSubstance,
+  },
+  {
+    id: 'pseudo-wisdom',
+    label: 'Pseudo-wisdom filler',
+    group: 'substance',
+    severity: 'low',
+    note: 'Sentences that sound profound and mean nothing — the key is to find balance, success is a journey — counted by the delete test: remove the sentence and the paragraph loses nothing. This is a heuristic approximation of that test, using a fixed list of stock sentences. It fires only when at least a third of the sentences in a passage of at least three sentences are filler, and at least two sentences are filler.',
+    fix: 'Delete the sentence, or replace it with the specific thing that happened.',
+    scan: pseudoWisdom,
   },
 ]
 

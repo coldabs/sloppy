@@ -14,8 +14,14 @@ describe('analyze', () => {
     expect(result.verdict).toBe('Clean enough')
   })
 
-  it('detects an em dash', () => {
-    expect(ruleIds('Fast, secure \u2014 and local.')).toContain('em-dash')
+  it('detects em dashes at density', () => {
+    // P2: one dash is a stylistic choice, not evidence. The rule
+    // fires only at density: more than 20 pause-dashes per 1,000
+    // words, and at least 3 of them.
+    expect(
+      ruleIds('Fast, secure \u2014 and local. Quick, simple \u2014 and cheap. Bold, bright \u2014 and new.'),
+    ).toContain('em-dash')
+    expect(ruleIds('Fast, secure \u2014 and local.')).not.toContain('em-dash')
   })
 
   it('does not flag dashes that are document structure', () => {
@@ -30,7 +36,9 @@ describe('analyze', () => {
   })
 
   it('still flags a spaced hyphen used as a pause in a sentence', () => {
-    expect(ruleIds('Fast, secure - and local')).toContain('em-dash')
+    expect(
+      ruleIds('Fast, secure - and local. Quick, simple - and cheap. Bold, bright - and new.'),
+    ).toContain('em-dash')
   })
 
   it('does not flag a minus sign as an em dash', () => {
@@ -100,8 +108,13 @@ describe('analyze', () => {
   })
 
   it('scores one hit in a short draft much lower than in a long draft', () => {
-    const short = analyze('Hi \u2014 there')
-    const long = analyze('Hi \u2014 there ' + 'word '.repeat(5006))
+    // Three pause-dashes in nine words is dense; the same three
+    // dashes diluted across 5,009 words are not. The long text uses
+    // distinct filler words so the diversity rules do not fire on
+    // the repetition itself.
+    const short = analyze('Hi \u2014 there. Hi \u2014 there. Hi \u2014 there.')
+    const filler = Array.from({ length: 5006 }, (_, i) => `word${i}`).join(' ')
+    const long = analyze(`Hi \u2014 there ${filler}`)
     expect(long.words).toBe(5009)
     expect(short.score).toBeLessThan(long.score)
     expect(long.score).toBeGreaterThan(90)
@@ -224,7 +237,7 @@ describe('buildMarkedSegments', () => {
   })
 
   it('marks a matched range and keeps the surrounding text', () => {
-    const text = 'one \u2014 two'
+    const text = 'Our SOC 2 platform is ready.'
     const findings = analyze(text).findings
     const segments = buildMarkedSegments(text, findings)
     expect(segments.map((segment) => segment.text).join('')).toBe(text)

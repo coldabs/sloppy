@@ -51,6 +51,16 @@ export interface Analysis {
 const EXCERPT_PAD = 34
 export const SCORE_DECAY = 55
 
+// Rules whose spans cover whole sentences, paragraphs, or the whole
+// draft are document-level evidence: they neither hide nor are hidden
+// by the phrase rules, because a buzzword inside a flat-rhythm run
+// is separate evidence from the rhythm itself.
+const DOCUMENT_GROUPS = new Set<GroupId>([
+  'structure',
+  'diversity',
+  'substance',
+])
+
 // Density scoring. A rule's contribution is its severity weight scaled
 // by how often the pattern appears per 100 words, levelling off, so
 // repeating one phrase costs more than saying it twice, but never
@@ -127,9 +137,11 @@ export const analyze = (text: string): Analysis => {
   // counts once, at the worst severity — it is one piece of evidence,
   // not two. The same goes for a span that sits entirely inside
   // another: "99.9% uptime" is one claim, not a trust claim plus a
-  // number. Structure rules span whole sentences, so they never take
-  // part: a buzzword inside a same-length run is separate evidence,
-  // and a same-length run is not hidden by a buzzword inside it. A
+  // number. Document-level rules (structure, diversity, substance)
+  // span whole sentences, paragraphs, or the whole draft, so they
+  // never take part: a buzzword inside a same-length run is separate
+  // evidence, and a same-length run is not hidden by a buzzword
+  // inside it. A
   // contained match is dropped only when the match containing it is
   // at least as severe; ties keep the rule that comes first in the
   // list, so the result is deterministic.
@@ -161,7 +173,7 @@ export const analyze = (text: string): Analysis => {
   const keptByStart = new Map<number, typeof scannedMatches>()
   let maxKeptLength = 0
   for (const item of ordered) {
-    if (item.rule.group === 'structure') {
+    if (DOCUMENT_GROUPS.has(item.rule.group)) {
       kept.push(item)
       continue
     }
@@ -172,7 +184,7 @@ export const analyze = (text: string): Analysis => {
       if (!atStart) continue
       for (const other of atStart) {
         if (
-          other.rule.group !== 'structure' &&
+          !DOCUMENT_GROUPS.has(other.rule.group) &&
           severityRank[other.rule.severity] <= severityRank[item.rule.severity] &&
           item.end <= other.end
         ) {
@@ -215,8 +227,12 @@ export const analyze = (text: string): Analysis => {
 
     rulesHit += 1
     hits += matches.length
-    penalty +=
-      severityWeight[rule.severity] * densityFactor(matches.length, words)
+    // Document-level rules (burstiness, type-token ratio) compute
+    // their own penalty from the measured value; every other rule
+    // uses severity weight times the density factor.
+    penalty += rule.penaltyFor
+      ? rule.penaltyFor(matches, words, scanned)
+      : severityWeight[rule.severity] * densityFactor(matches.length, words)
     counts[rule.severity] += matches.length
 
     const ruleFindings = matches.map((match) => {

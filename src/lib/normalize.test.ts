@@ -112,10 +112,12 @@ describe('normalisation evasions', () => {
   })
 
   it('catches an en dash, a double hyphen and a spaced hyphen as em dashes', () => {
+    // P2: a single dash is not evidence at any density, so each
+    // variant is shown three times in a short draft.
     for (const text of [
-      'Fast, secure \u2013 and local',
-      'Fast, secure -- and local',
-      'Fast, secure - and local',
+      'Fast, secure \u2013 and local. Quick, simple \u2013 and cheap. Bold, bright \u2013 and new.',
+      'Fast, secure -- and local. Quick, simple -- and cheap. Bold, bright -- and new.',
+      'Fast, secure - and local. Quick, simple - and cheap. Bold, bright - and new.',
     ]) {
       expect(analyze(text).findings.map((finding) => finding.ruleId)).toContain(
         'em-dash',
