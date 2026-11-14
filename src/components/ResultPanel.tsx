@@ -202,6 +202,8 @@ export function ResultPanel({
         </li>
       </ul>
 
+      <h3 className="result__section-title">Findings</h3>
+
       <div className="filters" role="group" aria-label="Filter findings by severity">
         {filterOptions.map((option) => {
           const count =

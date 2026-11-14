@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { analyze, type Analysis } from '../lib/analyzer'
 import { exampleDraft } from '../lib/exampleDraft'
 import { ResultPanel } from './ResultPanel'
@@ -20,19 +20,9 @@ export function CopyChecker() {
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const [scanId, setScanId] = useState(0)
-  const timer = useRef<number | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
-  useEffect(
-    () => () => {
-      if (timer.current !== null) window.clearTimeout(timer.current)
-    },
-    [],
-  )
-
   const runScan = () => {
-    if (timer.current !== null) window.clearTimeout(timer.current)
-
     if (text.trim().length === 0) {
       setAnalysis(null)
       setStatus('error')
@@ -49,20 +39,17 @@ export function CopyChecker() {
       return
     }
 
+    // The scan itself takes a few milliseconds at the 20,000-character
+    // limit, so there is no artificial delay: the result appears as
+    // soon as it is computed.
     setError(null)
-    setStatus('analyzing')
-    timer.current = window.setTimeout(() => {
-      setScannedText(text)
-      setAnalysis(analyze(text))
-      setScanId((value) => value + 1)
-      setStatus('done')
-      timer.current = null
-    }, 220)
+    setScannedText(text)
+    setAnalysis(analyze(text))
+    setScanId((value) => value + 1)
+    setStatus('done')
   }
 
   const loadExample = () => {
-    if (timer.current !== null) window.clearTimeout(timer.current)
-    timer.current = null
     setText(exampleDraft)
     setScannedText('')
     setAnalysis(null)
@@ -72,8 +59,6 @@ export function CopyChecker() {
   }
 
   const clearAll = () => {
-    if (timer.current !== null) window.clearTimeout(timer.current)
-    timer.current = null
     setText('')
     setScannedText('')
     setAnalysis(null)

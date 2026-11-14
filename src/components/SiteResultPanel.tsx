@@ -109,7 +109,7 @@ export function SiteResultPanel({
     )
   }
 
-  const { score, verdict, counts, hits, rulesHit, stats, title, description, url, structure, style, copy, copyText } =
+  const { score, verdict, counts, hits, rulesHit, stats, title, description, url, structure, style, copy, copyText, textTruncated } =
     analysis
 
   const segments = buildMarkedSegments(copyText, copy.findings)
@@ -203,6 +203,9 @@ export function SiteResultPanel({
           <p className="site-facts__limit">
             Static fetch only: JavaScript-rendered content, computed styles,
             hover states, and responsive layout are outside this scan.
+            {textTruncated
+              ? ' Only the first 60,000 characters of visible text were scanned; copy past that point was not checked.'
+              : ''}
           </p>
         </aside>
 
