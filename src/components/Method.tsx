@@ -1,6 +1,9 @@
-import { SCORE_DECAY, verdictBands } from '../lib/analyzer'
 import {
-  HITS_PER_RULE_SCORE_CAP,
+  DENSITY_FLOOR_WORDS,
+  SCORE_DECAY,
+  verdictBands,
+} from '../lib/analyzer'
+import {
   groupMeta,
   rulesByGroup,
   severityLabel,
@@ -29,12 +32,16 @@ export function Method() {
           <h3 className="method__subtitle">From hits to a verdict</h3>
           <ol className="score-steps">
             <li>
-              Each hit removes points by severity: high {severityWeight.high},
-              medium {severityWeight.medium}, low {severityWeight.low}.
+              Each rule is weighted by severity: high {severityWeight.high},
+              medium {severityWeight.medium}, low {severityWeight.low}, and
+              scaled by how often it appears per 100 words. The scale
+              levels off, so repeating one phrase costs more than saying
+              it twice, but never without limit.
             </li>
             <li>
-              One rule counts at most {HITS_PER_RULE_SCORE_CAP} times, so a single
-              repeated word cannot sink the whole draft on its own.
+              One hit in a short draft costs far more than the same hit in
+              a long one. Drafts under {DENSITY_FLOOR_WORDS} words are
+              scored as if they were {DENSITY_FLOOR_WORDS} words.
             </li>
             <li>
               The total penalty decays on a curve: score = round(100 x e^(-penalty
