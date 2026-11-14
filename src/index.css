@@ -327,6 +327,10 @@ img {
 }
 
 .mode-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 44px;
   padding-inline: 22px;
   border: 0;
@@ -340,6 +344,10 @@ img {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
+}
+
+.mode-tab svg {
+  flex: none;
 }
 
 .mode-tab:first-child {
@@ -480,9 +488,17 @@ img {
 }
 
 .site-facts__list a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+.site-facts__list a svg {
+  flex: none;
 }
 
 .site-facts__limit {
@@ -631,6 +647,10 @@ img {
 }
 
 .text-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 44px;
   padding: 0 6px;
   border: 0;
@@ -645,6 +665,10 @@ img {
   text-decoration: underline;
   text-underline-offset: 4px;
   cursor: pointer;
+}
+
+.text-button svg {
+  flex: none;
 }
 
 .text-button:hover {

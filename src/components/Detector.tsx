@@ -1,3 +1,4 @@
+import { IconFileText, IconWorld } from '@tabler/icons-react'
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { CopyChecker } from './CopyChecker'
 import { SiteChecker } from './SiteChecker'
@@ -8,6 +9,11 @@ const tabs: Array<{ id: Mode; label: string }> = [
   { id: 'copy', label: 'Copy' },
   { id: 'site', label: 'Website' },
 ]
+
+const tabIcons = {
+  copy: IconFileText,
+  site: IconWorld,
+} as const
 
 export function Detector() {
   const [mode, setMode] = useState<Mode>('copy')
@@ -43,30 +49,34 @@ export function Detector() {
         <p className="section-head__note">
           {mode === 'copy'
             ? 'Paste a landing page, a launch post, or any copy you are about to ship. The scan runs in this tab. Nothing is uploaded.'
-            : 'Enter a public page URL. A small local server fetches the HTML and same-origin CSS, then the rules run in this tab. Nothing is stored.'}
+            : 'Enter a public page URL. A server-side fetch route pulls the HTML and linked CSS, then the rules run in this tab. Nothing is stored.'}
         </p>
       </header>
 
       <div className="mode-tabs" role="tablist" aria-label="Scan mode">
-        {tabs.map((tab) => (
-          <button
-            className="mode-tab"
-            key={tab.id}
-            id={`tab-${tab.id}`}
-            ref={(node) => {
-              tabRefs.current[tab.id] = node
-            }}
-            type="button"
-            role="tab"
-            aria-selected={mode === tab.id}
-            aria-controls={`panel-${tab.id}`}
-            tabIndex={mode === tab.id ? 0 : -1}
-            onClick={() => setMode(tab.id)}
-            onKeyDown={moveTab}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const Icon = tabIcons[tab.id]
+          return (
+            <button
+              className="mode-tab"
+              key={tab.id}
+              id={`tab-${tab.id}`}
+              ref={(node) => {
+                tabRefs.current[tab.id] = node
+              }}
+              type="button"
+              role="tab"
+              aria-selected={mode === tab.id}
+              aria-controls={`panel-${tab.id}`}
+              tabIndex={mode === tab.id ? 0 : -1}
+              onClick={() => setMode(tab.id)}
+              onKeyDown={moveTab}
+            >
+              <Icon size={15} stroke={2} aria-hidden="true" />
+              <span>{tab.label}</span>
+            </button>
+          )
+        })}
       </div>
 
       <div

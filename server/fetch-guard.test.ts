@@ -1,7 +1,12 @@
 // @vitest-environment node
 import http from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { FetchError, fetchCss, fetchPage } from './fetch.mjs'
+import {
+  FetchError,
+  MAX_HTML_BYTES,
+  fetchCss,
+  fetchPage,
+} from './fetch.mjs'
 
 let server: http.Server
 let port: number
@@ -31,7 +36,7 @@ beforeAll(
           res.end('{}')
         } else if (url === '/big') {
           res.writeHead(200, { 'content-type': 'text/html' })
-          res.end('x'.repeat(4 * 1024 * 1024))
+          res.end('x'.repeat(MAX_HTML_BYTES + 1))
         } else if (url === '/missing') {
           res.writeHead(404, { 'content-type': 'text/html' })
           res.end('nope')
@@ -102,10 +107,14 @@ describe('fetch guards against a local server', () => {
     expect(await codeOf(() => fetchPage(`http://127.0.0.1:${port}/slow`, { allowPrivate: true }))).toBe('timeout')
   })
 
-  it('fetches same-origin CSS and rejects bad page URLs as FetchError', async () => {
-    const css = await fetchCss('/css-ok', `http://127.0.0.1:${port}/ok`, { allowPrivate: true })
-    expect(css.css).toContain('color: red')
-    expect(await codeOf(() => fetchCss('/css-ok', 'not a url', { allowPrivate: true }))).toBe('invalid-url')
-    expect(await codeOf(() => fetchCss('https://example.com/x.css', `http://127.0.0.1:${port}/ok`, { allowPrivate: true }))).toBe('cross-origin-css')
+  it('fetches linked CSS, including a different origin, and validates targets', async () => {
+    const same = await fetchCss(`http://127.0.0.1:${port}/css-ok`, { allowPrivate: true })
+    expect(same.css).toContain('color: red')
+
+    const cross = await fetchCss(`http://localhost:${port}/css-ok`, { allowPrivate: true })
+    expect(cross.css).toContain('color: red')
+
+    expect(await codeOf(() => fetchCss('not a url', { allowPrivate: true }))).toBe('invalid-url')
+    expect(await codeOf(() => fetchCss('http://10.0.0.1/x.css'))).toBe('blocked-address')
   })
 })

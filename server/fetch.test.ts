@@ -47,8 +47,7 @@ describe('isPrivateAddress', () => {
   })
 })
 
-describe('validateTarget', () => {
-  it('rejects non-http protocols', async () => {
+describe('validateTarget', () => {  it('rejects non-http protocols', async () => {
     expect(await rejection('file:///etc/passwd')).toBe('blocked-protocol')
     expect(await rejection('ftp://example.com/file')).toBe('blocked-protocol')
   })

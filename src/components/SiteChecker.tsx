@@ -1,3 +1,4 @@
+import { IconFlask } from '@tabler/icons-react'
 import { useRef, useState, type FormEvent } from 'react'
 import { analyzeSite, type SiteAnalysis } from '../lib/siteAnalyzer'
 import { SiteResultPanel, type SiteStatus } from './SiteResultPanel'
@@ -19,9 +20,20 @@ const responseError = async (response: Response) => {
     // The response was not JSON, likely a static host without the API.
   }
   if (response.status === 404) {
-    return 'The local fetch server is not running. Start the app with npm run dev.'
+    return 'The fetch endpoint is not running. Start the app with npm run dev, or deploy the api/ routes.'
   }
   return `The page could not be fetched (HTTP ${response.status}).`
+}
+
+const parseJson = async <T,>(response: Response): Promise<T> => {
+  const text = await response.text()
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error(
+      'The page fetch API is not available on this deployment. Run the app with npm run dev, or deploy the api/ routes so live scans can work.',
+    )
+  }
 }
 
 const fetchStylesheets = async (
@@ -31,28 +43,36 @@ const fetchStylesheets = async (
 ) => {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const page = new URL(pageUrl)
-  const hrefs = new Set<string>()
+  const baseHref = doc.querySelector('base[href]')?.getAttribute('href')
+  const base = baseHref ? new URL(baseHref, page) : page
+  const candidates: string[] = []
 
   for (const link of doc.querySelectorAll('link[href]')) {
     const rel = (link.getAttribute('rel') ?? '').toLowerCase().split(/\s+/)
     if (!rel.includes('stylesheet')) continue
     try {
-      const resolved = new URL(link.getAttribute('href') ?? '', page)
-      if (resolved.origin !== page.origin) continue
+      const resolved = new URL(link.getAttribute('href') ?? '', base)
       if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') continue
-      hrefs.add(resolved.href)
+      candidates.push(resolved.href)
     } catch {
       // Ignore an unparseable href.
     }
-    if (hrefs.size >= MAX_STYLESHEETS) break
   }
 
+  const hrefs = [...new Set(candidates)]
+  hrefs.sort(
+    (a, b) =>
+      Number(new URL(b).origin === page.origin) -
+      Number(new URL(a).origin === page.origin),
+  )
+
   const results = await Promise.allSettled(
-    [...hrefs].map(async (href) => {
-      const query = `url=${encodeURIComponent(href)}&page=${encodeURIComponent(pageUrl)}`
-      const response = await fetch(`/api/css?${query}`, { signal })
+    hrefs.slice(0, MAX_STYLESHEETS).map(async (href) => {
+      const response = await fetch(`/api/css?url=${encodeURIComponent(href)}`, {
+        signal,
+      })
       if (!response.ok) throw new Error('Stylesheet skipped')
-      const body = (await response.json()) as { css?: string }
+      const body = await parseJson<{ css?: string }>(response)
       return body.css ?? ''
     }),
   )
@@ -106,7 +126,7 @@ export function SiteChecker() {
           signal: controller.signal,
         })
         if (!response.ok) throw new Error(await responseError(response))
-        const body = (await response.json()) as { url: string; html: string }
+        const body = await parseJson<{ url: string; html: string }>(response)
         pageUrl = body.url
         html = body.html
         stylesheets = await fetchStylesheets(pageUrl, html, controller.signal)
@@ -201,7 +221,8 @@ export function SiteChecker() {
           }}
           disabled={busy}
         >
-          Scan the bundled demo site
+          <IconFlask size={14} stroke={2} aria-hidden="true" />
+          <span>Scan the bundled demo site</span>
         </button>
         <span className="site-demo__note">
           A fixture page built to fail this checklist.

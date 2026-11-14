@@ -3,12 +3,16 @@ import http from 'node:http'
 import https from 'node:https'
 import { isIP } from 'node:net'
 
-export const MAX_HTML_BYTES = 3 * 1024 * 1024
-export const MAX_CSS_BYTES = 512 * 1024
+export const MAX_HTML_BYTES = 8 * 1024 * 1024
+export const MAX_CSS_BYTES = 2 * 1024 * 1024
 export const MAX_REDIRECTS = 3
 export const FETCH_TIMEOUT_MS = 10000
 const ALLOWED_PORTS = new Set(['', '80', '443'])
-const USER_AGENT = 'sloppy-audit/1.0 (local pattern checker)'
+// Sites routinely block unknown clients or return a bot challenge. The
+// request is user initiated and read-only, so identify as a normal desktop
+// browser, the same way the user's own browser would.
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 export class FetchError extends Error {
   constructor(status, code, message) {
@@ -129,24 +133,28 @@ const resolveTarget = async (input, { allowPrivate = false } = {}) => {
   }
 }
 
-const readLimited = async (stream, limit) => {
+const readLimited = async (stream, limit, truncate = false) => {
   const chunks = []
   let total = 0
-  try {
-    for await (const chunk of stream) {
-      total += chunk.byteLength
-      if (total > limit) {
+
+  for await (const chunk of stream) {
+    let piece = chunk
+    if (total + piece.byteLength > limit) {
+      if (!truncate) {
         stream.destroy()
         throw new FetchError(413, 'too-large', 'The response is larger than the scan limit.')
       }
-      chunks.push(chunk)
+      const remaining = limit - total
+      if (remaining > 0) {
+        piece = piece.subarray(0, remaining)
+        chunks.push(piece)
+        total += piece.byteLength
+      }
+      stream.destroy()
+      break
     }
-  } catch (error) {
-    if (error instanceof FetchError) throw error
-    if (error?.message === 'timeout') {
-      throw new FetchError(504, 'timeout', 'The site took too long to respond.')
-    }
-    throw new FetchError(502, 'network-failed', 'The site could not be reached.')
+    chunks.push(piece)
+    total += piece.byteLength
   }
 
   return new TextDecoder('utf-8').decode(Buffer.concat(chunks, total))
@@ -193,7 +201,11 @@ const request = (target) =>
         method: 'GET',
         headers: {
           'user-agent': USER_AGENT,
-          accept: 'text/html,application/xhtml+xml,text/css;q=0.9,*/*;q=0.1',
+          accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,text/css;q=0.8,*/*;q=0.5',
+          'accept-language': 'en-US,en;q=0.9',
+          'cache-control': 'no-cache',
+          pragma: 'no-cache',
         },
         lookup: lookupPinned,
       },
@@ -260,6 +272,13 @@ export const fetchPage = async (input, { allowPrivate = false } = {}) => {
   if (response.status < 200 || response.status >= 300) {
     response.body.destroy()
     const status = `${response.status}${response.statusMessage ? ` ${response.statusMessage}` : ''}`
+    if ([401, 403, 429].includes(response.status)) {
+      throw new FetchError(
+        502,
+        'blocked-by-site',
+        `The site refused the request (HTTP ${response.status}). It may block automated fetches, so try a public page or another URL.`,
+      )
+    }
     throw new FetchError(502, 'http-error', `The page returned HTTP ${status}.`)
   }
 
@@ -273,24 +292,8 @@ export const fetchPage = async (input, { allowPrivate = false } = {}) => {
   return { url: url.href, contentType, html }
 }
 
-export const fetchCss = async (input, pageUrl, { allowPrivate = false } = {}) => {
-  let page
-  try {
-    page = new URL(pageUrl)
-  } catch {
-    throw new FetchError(400, 'invalid-url', 'That is not a valid page URL.')
-  }
-  let cssUrl
-  try {
-    cssUrl = new URL(input, page)
-  } catch {
-    throw new FetchError(400, 'invalid-url', 'That is not a valid stylesheet URL.')
-  }
-  if (cssUrl.origin !== page.origin) {
-    throw new FetchError(403, 'cross-origin-css', 'Only same-origin stylesheets are fetched.')
-  }
-
-  const { response, url } = await follow(cssUrl.href, { allowPrivate })
+export const fetchCss = async (input, { allowPrivate = false } = {}) => {
+  const { response, url } = await follow(input, { allowPrivate })
 
   if (response.status < 200 || response.status >= 300) {
     response.body.destroy()
@@ -303,9 +306,6 @@ export const fetchCss = async (input, pageUrl, { allowPrivate = false } = {}) =>
     throw new FetchError(415, 'not-css', 'That URL did not return CSS.')
   }
 
-  const css = await readLimited(response.body, MAX_CSS_BYTES)
-  if (new URL(url.href).origin !== page.origin) {
-    throw new FetchError(403, 'cross-origin-css', 'The stylesheet redirected off the page origin.')
-  }
+  const css = await readLimited(response.body, MAX_CSS_BYTES, true)
   return { url: url.href, css }
 }

@@ -63,8 +63,8 @@ see the tool work before pasting their own copy.
 
 ### Website
 
-Enter a public URL. The local server fetches the HTML and same-origin
-stylesheets, and the browser analyzes three things:
+Enter a public URL. The fetch route pulls the HTML and the linked stylesheets,
+including cross-origin CDN CSS, and the browser analyzes three things:
 
 1. **Structure:** dead links, anchors with no target, unnamed controls, missing
    image alts, heading order, template section stacks, trust logo bars, forced
@@ -88,7 +88,9 @@ npm install
 npm run dev        # dev server with the local fetch API on port 5173
 ```
 
-Then open http://127.0.0.1:5173 in a browser.
+Then open http://localhost:5173 in a browser. The server checks both loopback
+addresses and refuses to start if an old dev server is still holding the port,
+rather than running beside a stale app with no fetch API.
 
 Other scripts:
 
@@ -103,6 +105,17 @@ npm run typecheck  # TypeScript only
 `npm run dev` and `npm start` both run `server.mjs`: Vite middleware in dev, a
 static server plus API in production. `npm run preview` is an alias for
 `npm start`.
+
+### Deploying
+
+Vercel detects the Vite build and the `api/fetch.js` and `api/css.js`
+functions, so live scans work on a Vercel deployment with the same guards. The
+functions force private-address blocking off the environment flag and never
+read local files.
+
+A purely static host, or plain `vite` without `server.mjs`, has no fetch
+endpoint. The Website panel then shows a clear message telling you to run the
+local server or deploy the `api/` routes instead of a JSON parse error.
 
 ## How the score works
 
@@ -168,8 +181,8 @@ It is deliberately narrow:
   lookup, so a hostname whose DNS answer changes mid-fetch cannot
   redirect the request to a private address
 - redirects followed manually, at most 3, with the same checks on every hop
-- 10 second timeout, 3 MB HTML cap, 512 KB per stylesheet
-- at most 5 same-origin stylesheets per page
+- 10 second timeout, 8 MB HTML cap, 2 MB per stylesheet
+- at most 5 linked stylesheets per page, including cross-origin CDN styles
 - no cookies, no credentials, no stored pages
 
 For local development and tests, `SLOPPY_ALLOW_PRIVATE=1` lifts the private
@@ -189,7 +202,10 @@ network request.
 server.mjs             dev and production server entry
 server/
   fetch.mjs            fetch guards, redirects, size limits, CSS proxy
-  fetch.test.ts        URL guard tests
+  fetch.test.ts        URL guard and CSS tests
+api/
+  fetch.js             Vercel function for page fetches
+  css.js               Vercel function for linked stylesheets
 src/
   components/
     Detector.tsx       mode tabs and panel routing
@@ -219,9 +235,10 @@ docs/
 
 ## Privacy
 
-Copy mode never leaves the tab. Website mode sends the URL to the local server
-on your machine, which fetches the page directly. No analytics, no account, no
-third-party proxy, and no stored pages. Analysis always runs in the browser.
+Copy mode never leaves the tab. Website mode sends the URL to the app's fetch
+route, either the local server or the deployed function, which fetches the page
+directly. No analytics, no account, no third-party proxy, and no stored pages.
+Analysis always runs in the browser.
 
 ## Limits
 
@@ -248,10 +265,10 @@ regions with live status roles, and respects `prefers-reduced-motion`.
 
 ## Stack
 
-React 19, TypeScript, Vite, Vitest, happy-dom, Oxlint, and Node's built-in HTTP
-and fetch. No UI framework, no icon pack, and no runtime dependency for the
-server. The look is a Swiss poster: paper, ink, and one lime accent, in a fixed
-light theme.
+React 19, TypeScript, Vite, Vitest, happy-dom, Oxlint, Tabler icons for a small
+set of named glyphs, and Node's built-in HTTP and fetch. No UI framework and no
+runtime dependency for the server. The look is a Swiss poster: paper, ink, and
+one lime accent, in a fixed light theme.
 
 ## Contributing
 

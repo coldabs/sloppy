@@ -1,3 +1,4 @@
+import { IconExternalLink } from '@tabler/icons-react'
 import { buildMarkedSegments } from '../lib/analyzer'
 import type { SiteAnalysis, SiteFindingGroup } from '../lib/siteAnalyzer'
 import { FindingList, type FindingListItem } from './FindingList'
@@ -84,7 +85,7 @@ export function SiteResultPanel({
         </div>
         <p className="result__hint">
           {fetching
-            ? `The local server is requesting the HTML${targetUrl ? ` for ${shortUrl(targetUrl)}` : ''} and its same-origin stylesheets.`
+            ? `The fetch route is requesting the HTML${targetUrl ? ` for ${shortUrl(targetUrl)}` : ''} and its linked stylesheets.`
             : 'Running the structure, style, and copy rules over the fetched page.'}
         </p>
       </div>
@@ -162,6 +163,7 @@ export function SiteResultPanel({
               <dd>
                 <a href={url} target="_blank" rel="noreferrer noopener">
                   {shortUrl(url)}
+                  <IconExternalLink size={12} stroke={2} aria-hidden="true" />
                 </a>
               </dd>
             </div>
