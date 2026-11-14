@@ -33,7 +33,7 @@ Trust your ear over the score.
 
 ## What it checks
 
-Twelve rules, in four groups. The full list, with the wording for each rule
+Fifteen rules, in four groups. The full list, with the wording for each rule
 and its suggested fix, is in [docs/METHOD.md](docs/METHOD.md), and the page
 renders that same list from the same data, so the documentation and the
 scanner cannot drift apart.
@@ -69,9 +69,18 @@ npm run lint       # Oxlint
 
 ## How the score works
 
-1. Every hit removes points by severity: high 15, medium 9, low 4.
-2. Each rule counts at most twice, so one repeated word cannot sink a draft.
+1. Each rule is weighted by severity: high 15, medium 9, low 4, and scaled
+   by how often it appears per 100 words. The scale levels off, so
+   repeating one phrase costs more than saying it twice, but never without
+   limit.
+2. One hit in a short draft costs far more than the same hit in a long one.
+   Drafts under 50 words are scored as if they were 50 words.
 3. The penalty decays on a curve: `score = round(100 * e^(-penalty / 55))`.
+
+Before scanning, the draft is normalised. Invisible characters are
+stripped, lookalike letters are folded to Latin, and dash and hyphen
+variants are unified, so a phrase cannot hide by swapping a character.
+Findings still highlight the exact words you pasted.
 
 Verdict bands:
 
@@ -83,9 +92,10 @@ Verdict bands:
 | 20 to 44 | Heavy slop |
 | 0 to 19 | Industrial slop |
 
-Numbers near a source cue such as "according to", "report", "audit", or a
-URL are left alone by the unsourced number rule. The full method, including
-every rule, its weight, and its fix, is in [docs/METHOD.md](docs/METHOD.md).
+A number is left alone only with a real citation next to it: a link, or a
+named report, study, survey, or audit together with a year. The full
+method, including every rule, its weight, and its fix, is in
+[docs/METHOD.md](docs/METHOD.md).
 
 ## Privacy
 
