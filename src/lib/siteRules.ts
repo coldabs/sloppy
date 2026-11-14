@@ -110,7 +110,6 @@ const deadLinks = (context: SiteContext): SiteHit[] => {
     seen.add(raw)
     const label = textOf(link) || accessibleName(context.doc, link) || '(no label)'
     hits.push({ excerpt: `${excerpt(label, 40)} points to ${raw}` })
-    if (hits.length >= 8) break
   }
 
   return hits
@@ -127,7 +126,6 @@ const unnamedControls = (context: SiteContext): SiteHit[] => {
     if (accessibleName(context.doc, control)) continue
     const tag = control.tagName.toLowerCase()
     hits.push({ excerpt: `<${tag}> has no text, aria-label, or image alt` })
-    if (hits.length >= 8) break
   }
 
   return hits
@@ -142,7 +140,6 @@ const missingAlt = (context: SiteContext): SiteHit[] => {
     if (image.getAttribute('aria-hidden') === 'true') continue
     const source = image.getAttribute('src')?.trim() || '(no src)'
     hits.push({ excerpt: `Image without alt: ${excerpt(source, 60)}` })
-    if (hits.length >= 8) break
   }
 
   return hits
@@ -166,7 +163,6 @@ const headingOrder = (context: SiteContext): SiteHit[] => {
       hits.push({
         excerpt: `Heading jumps from h${previous} to h${level}: ${excerpt(textOf(heading), 50)}`,
       })
-      if (hits.length >= 5) break
     }
     previous = level
   }
@@ -249,7 +245,6 @@ const fakeUrgency = (context: SiteContext): SiteHit[] => {
   const hits: SiteHit[] = []
   for (const match of context.text.matchAll(urgencyPattern)) {
     hits.push({ excerpt: excerpt(match[0], 60) })
-    if (hits.length >= 5) break
   }
   return hits
 }
@@ -259,7 +254,6 @@ const placeholderCopy = (context: SiteContext): SiteHit[] => {
   const pattern = /lorem ipsum|dolor sit amet|consectetur adipiscing/gi
   for (const match of context.text.matchAll(pattern)) {
     hits.push({ excerpt: excerpt(match[0], 60) })
-    if (hits.length >= 4) break
   }
   return hits
 }
@@ -285,7 +279,6 @@ const genericFaq = (context: SiteContext): SiteHit[] => {
     /is my data secure|can i cancel anytime|do you offer a free trial|how does it work\?/gi
   for (const match of context.text.matchAll(pattern)) {
     hits.push({ excerpt: excerpt(match[0], 70) })
-    if (hits.length >= 5) break
   }
   return hits
 }

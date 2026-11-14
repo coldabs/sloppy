@@ -42,6 +42,10 @@ export interface Analysis {
   rulesHit: number
   words: number
   penalty: number
+  // True when the draft had no words at all. The score is 100 only
+  // because there is nothing to score, and the verdict says so: an
+  // empty draft is not "Clean enough".
+  empty: boolean
 }
 
 const EXCERPT_PAD = 34
@@ -75,6 +79,12 @@ export const verdictBands = [
 export const verdictFor = (score: number): string =>
   verdictBands.find((band) => score >= band.min)?.label ?? 'Industrial slop'
 
+// Shared with the website checker: one penalty, one score, same curve.
+export const scoreFromPenalty = (penalty: number): number =>
+  penalty <= 0
+    ? 100
+    : Math.max(0, Math.min(100, Math.round(100 * Math.exp(-penalty / SCORE_DECAY))))
+
 const buildExcerpt = (text: string, start: number, end: number) => {
   const from = Math.max(0, start - EXCERPT_PAD)
   const to = Math.min(text.length, end + EXCERPT_PAD)
@@ -96,31 +106,92 @@ export const analyze = (text: string): Analysis => {
   const { text: scanned, map } = normalizeForScan(text)
   const words = countWords(text)
 
+  if (words === 0) {
+    return {
+      score: 100,
+      verdict: 'Nothing to score',
+      findings: [],
+      groups: [],
+      counts: { high: 0, medium: 0, low: 0 },
+      hits: 0,
+      rulesHit: 0,
+      words: 0,
+      penalty: 0,
+      empty: true,
+    }
+  }
+
   // Every rule scans the same normalised text, so one span can be
   // matched by two rules: "in today's fast-paced world" is listed in
   // both the hype vocabulary and the template opener. The same span
   // counts once, at the worst severity — it is one piece of evidence,
-  // not two. Ties keep the rule that comes first in the list, so the
-  // result is deterministic.
-  const scannedMatches: Array<{ rule: RuleDefinition; start: number; end: number }> = []
-  for (const rule of rules) {
+  // not two. The same goes for a span that sits entirely inside
+  // another: "99.9% uptime" is one claim, not a trust claim plus a
+  // number. Structure rules span whole sentences, so they never take
+  // part: a buzzword inside a same-length run is separate evidence,
+  // and a same-length run is not hidden by a buzzword inside it. A
+  // contained match is dropped only when the match containing it is
+  // at least as severe; ties keep the rule that comes first in the
+  // list, so the result is deterministic.
+  const scannedMatches: Array<{
+    rule: RuleDefinition
+    start: number
+    end: number
+    order: number
+  }> = []
+  rules.forEach((rule, order) => {
     for (const match of rule.scan(scanned)) {
-      scannedMatches.push({ rule, start: match.start, end: match.end })
+      scannedMatches.push({ rule, start: match.start, end: match.end, order })
     }
-  }
-  const winners = new Map<string, (typeof scannedMatches)[number]>()
-  for (const item of scannedMatches) {
-    const key = `${item.start}:${item.end}`
-    const existing = winners.get(key)
-    if (
-      !existing ||
-      severityRank[item.rule.severity] < severityRank[existing.rule.severity]
-    ) {
-      winners.set(key, item)
+  })
+  const ordered = [...scannedMatches].sort(
+    (a, b) =>
+      severityRank[a.rule.severity] - severityRank[b.rule.severity] ||
+      a.order - b.order ||
+      b.end - b.start - (a.end - a.start) ||
+      a.start - b.start,
+  )
+  const kept: typeof scannedMatches = []
+  // A match can only be contained by a kept match that starts at or
+  // before it and ends at or after it, so only kept matches starting
+  // within one maximum span length of this match's end can contain
+  // it. They are indexed by start position: scanning the whole kept
+  // list for every match made a long draft quadratic (a 20k draft
+  // with ~1,300 matches took ~48 ms; this keeps it at ~12 ms).
+  const keptByStart = new Map<number, typeof scannedMatches>()
+  let maxKeptLength = 0
+  for (const item of ordered) {
+    if (item.rule.group === 'structure') {
+      kept.push(item)
+      continue
+    }
+    const earliestStart = item.end - maxKeptLength
+    let contained = false
+    for (let s = item.start; s >= earliestStart && !contained; s--) {
+      const atStart = keptByStart.get(s)
+      if (!atStart) continue
+      for (const other of atStart) {
+        if (
+          other.rule.group !== 'structure' &&
+          severityRank[other.rule.severity] <= severityRank[item.rule.severity] &&
+          item.end <= other.end
+        ) {
+          contained = true
+          break
+        }
+      }
+    }
+    if (!contained) {
+      kept.push(item)
+      const list = keptByStart.get(item.start) ?? []
+      list.push(item)
+      keptByStart.set(item.start, list)
+      const length = item.end - item.start
+      if (length > maxKeptLength) maxKeptLength = length
     }
   }
   const matchesByRule = new Map<string, RawMatch[]>()
-  for (const item of winners.values()) {
+  for (const item of kept) {
     const list = matchesByRule.get(item.rule.id) ?? []
     list.push({ start: item.start, end: item.end })
     matchesByRule.set(item.rule.id, list)
@@ -179,10 +250,7 @@ export const analyze = (text: string): Analysis => {
       a.rule.label.localeCompare(b.rule.label),
   )
 
-  const score =
-    penalty === 0
-      ? 100
-      : Math.max(0, Math.min(100, Math.round(100 * Math.exp(-penalty / SCORE_DECAY))))
+  const score = scoreFromPenalty(penalty)
 
   return {
     score,
@@ -194,6 +262,7 @@ export const analyze = (text: string): Analysis => {
     rulesHit,
     words,
     penalty: Math.round(penalty * 100) / 100,
+    empty: false,
   }
 }
 

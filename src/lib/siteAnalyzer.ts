@@ -44,6 +44,9 @@ export interface SiteAnalysis {
   style: SiteFindingGroup[]
   copy: Analysis
   copyText: string
+  // True when the page had more visible text than the 60,000 characters
+  // that were scanned. The copy findings cover the scanned part only.
+  textTruncated: boolean
   counts: SeverityCounts
   hits: number
   rulesHit: number
@@ -59,7 +62,26 @@ export interface SiteSource {
 
 const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
 
-const SITE_HITS_PER_RULE_CAP = 2
+// A rule's penalty grows with its occurrences and levels off, so twenty
+// dead links cost more than two but cannot decide a page on their own.
+// One or two occurrences cost exactly what they cost before, so the
+// thresholds the site rules were tuned against do not move.
+export const siteDensityFactor = (occurrences: number): number =>
+  occurrences <= 2
+    ? occurrences
+    : 2 + (occurrences - 2) / (1 + (occurrences - 2) / 8)
+
+// Style signals are taste heuristics, not substance. Together they
+// contribute at most this many penalty points, so a page with honest
+// copy cannot be dragged halfway to slop by its palette and shadows
+// alone. Structure and copy penalties are not capped.
+export const STYLE_PENALTY_CAP = 15
+
+// Only the first 60,000 characters of visible page text are scanned:
+// a full-page scan of an unbounded document is too slow to run in the
+// browser, and the copy panel shows the scanned text. The flag below
+// tells the UI to say so.
+export const SITE_TEXT_LIMIT = 60000
 
 const sortGroups = (groups: SiteFindingGroup[]) =>
   [...groups].sort(
@@ -71,7 +93,8 @@ const sortGroups = (groups: SiteFindingGroup[]) =>
 
 export const analyzeSite = ({ url, html, stylesheets = [] }: SiteSource): SiteAnalysis => {
   const doc = new DOMParser().parseFromString(html, 'text/html')
-  const text = extractPageText(doc).slice(0, 60000)
+  const fullText = extractPageText(doc)
+  const text = fullText.slice(0, SITE_TEXT_LIMIT)
   const copy = analyze(text)
   const css = stripComments([collectCss(doc), ...stylesheets].join('\n'))
   const context = { doc, css, text, url }
@@ -79,6 +102,7 @@ export const analyzeSite = ({ url, html, stylesheets = [] }: SiteSource): SiteAn
   const groups: SiteFindingGroup[] = []
   const counts: SeverityCounts = { ...copy.counts }
   let sitePenalty = 0
+  let stylePenalty = 0
   let siteHits = 0
 
   for (const rule of siteRules) {
@@ -88,11 +112,17 @@ export const analyzeSite = ({ url, html, stylesheets = [] }: SiteSource): SiteAn
     const occurrences = hits.reduce((sum, hit) => sum + (hit.count ?? 1), 0)
     counts[rule.severity] += occurrences
     siteHits += occurrences
-    sitePenalty +=
-      severityWeight[rule.severity] * Math.min(occurrences, SITE_HITS_PER_RULE_CAP)
+    const contribution =
+      severityWeight[rule.severity] * siteDensityFactor(occurrences)
+    if (rule.group === 'style') {
+      stylePenalty += contribution
+    } else {
+      sitePenalty += contribution
+    }
     groups.push({ rule, hits, occurrences })
   }
 
+  sitePenalty += Math.min(stylePenalty, STYLE_PENALTY_CAP)
   const penalty = copy.penalty + sitePenalty
   const score = scoreFromPenalty(penalty)
   const occurrencesFor = (id: string) =>
@@ -119,6 +149,7 @@ export const analyzeSite = ({ url, html, stylesheets = [] }: SiteSource): SiteAn
     style: sortGroups(groups.filter((group) => group.rule.group === 'style')),
     copy,
     copyText: text,
+    textTruncated: fullText.length > SITE_TEXT_LIMIT,
     counts,
     hits: copy.hits + siteHits,
     rulesHit: copy.rulesHit + groups.length,

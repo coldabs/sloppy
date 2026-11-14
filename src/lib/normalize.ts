@@ -106,6 +106,36 @@ const HOMOGLYPHS = new Map<string, string>([
   ['ı', 'i'],
   ['ɒ', 'o'],
   ['ʏ', 'y'],
+  // Small capital letters. NFKC and NFKD do not fold these, so
+  // "sᴇᴀᴍʟᴇss" scans as "seamless" only when they are mapped.
+  ['ᴀ', 'a'],
+  ['ʙ', 'b'],
+  ['ᴄ', 'c'],
+  ['ᴅ', 'd'],
+  ['ᴇ', 'e'],
+  ['ɢ', 'g'],
+  ['ʜ', 'h'],
+  ['ɪ', 'i'],
+  ['ᴊ', 'j'],
+  ['ᴋ', 'k'],
+  ['ʟ', 'l'],
+  ['ᴍ', 'm'],
+  ['ɴ', 'n'],
+  ['ᴏ', 'o'],
+  ['ᴘ', 'p'],
+  ['ʀ', 'r'],
+  ['ᴛ', 't'],
+  ['ᴜ', 'u'],
+  ['ᴠ', 'v'],
+  ['ᴡ', 'w'],
+  ['ᴢ', 'z'],
+  // Armenian lookalikes
+  ['օ', 'o'],
+  ['ո', 'n'],
+  ['ս', 'u'],
+  // Cyrillic ghe looks like a Latin r in "гevolutionary".
+  ['г', 'r'],
+  ['Г', 'R'],
 ])
 
 // Private-use character used for underscores. It acts as a word
@@ -136,6 +166,27 @@ const EM_DASH = '\u2014'
 const isWordChar = (ch: string | undefined): boolean =>
   ch !== undefined && /[\p{L}\p{N}]/u.test(ch)
 
+const isLetter = (ch: string | undefined): boolean =>
+  ch !== undefined && /[\p{L}]/u.test(ch)
+
+// The nearest character that survives normalisation on either side of
+// position i. Zero-width characters are stripped before scanning, so a
+// dash next to one — "fast\u200b-paced" — has to be judged by the
+// letters either side of it, not by the invisible character itself.
+const effectivePrev = (chars: string[], i: number): string | undefined => {
+  for (let j = i - 1; j >= 0; j -= 1) {
+    if (!ZERO_WIDTH.has(chars[j])) return chars[j]
+  }
+  return undefined
+}
+
+const effectiveNext = (chars: string[], i: number): string | undefined => {
+  for (let j = i + 1; j < chars.length; j += 1) {
+    if (!ZERO_WIDTH.has(chars[j])) return chars[j]
+  }
+  return undefined
+}
+
 // True when the output so far ends at the start of a line: only spaces
 // or tabs since the last newline, or nothing at all.
 const isLineStart = (out: string[]): boolean => {
@@ -149,10 +200,12 @@ const isLineStart = (out: string[]): boolean => {
 
 // True when the nearest non-space character before position i is an
 // opening bracket or an operator, so a hyphen there is a minus sign.
+// Zero-width characters are skipped: they do not survive scanning,
+// so they cannot be the character that decides the dash's fate.
 const prevNonSpaceIsOperator = (chars: string[], i: number): boolean => {
   for (let j = i - 1; j >= 0; j -= 1) {
     const ch = chars[j]
-    if (ch === ' ' || ch === '\t') continue
+    if (ch === ' ' || ch === '\t' || ZERO_WIDTH.has(ch)) continue
     return '([{=+*/^,'.includes(ch)
   }
   return false
@@ -176,17 +229,22 @@ export const normalizeForScan = (original: string): NormalizedText => {
 
     if (ZERO_WIDTH.has(ch)) continue
 
-    // NFKC folds fullwidth letters and digits, ligatures and
-    // compatibility forms down to their plain equivalents.
-    const folded = ch.normalize('NFKC')
+    // NFKD folds fullwidth letters and digits, ligatures and
+    // compatibility forms down to their plain equivalents, and splits
+    // accented letters into a base letter plus a combining mark. The
+    // marks are stripped, so "délve" scans as "delve" and
+    // "seaml\u0065\u0301ss" scans as "seamless".
+    const folded = ch.normalize('NFKD').replace(/[\p{M}]/gu, '')
     for (const foldedChar of [...folded]) {
       let mapped = HOMOGLYPHS.get(foldedChar) ?? foldedChar
 
       if (mapped === EM_DASH) {
         // Keep the em dash itself, whatever surrounds it.
       } else if (DASH_VARIANTS.has(mapped)) {
-        const prev = chars[i - 1]
-        const next = chars[i + 1]
+        // The dash's fate is decided by its surviving neighbours, not
+        // by raw characters that normalisation removes.
+        const prev = effectivePrev(chars, i)
+        const next = effectiveNext(chars, i)
         // A hyphen at the start of a line is a list bullet, not a
         // pause, so it stays a hyphen. A literal em dash at a line
         // start is a different character and is not caught by this
@@ -205,6 +263,16 @@ export const normalizeForScan = (original: string): NormalizedText => {
         } else {
           mapped = isWordChar(prev) && isWordChar(next) ? '-' : EM_DASH
         }
+      } else if (
+        (mapped === '.' || mapped === '/') &&
+        isLetter(effectivePrev(chars, i)) &&
+        isLetter(effectiveNext(chars, i))
+      ) {
+        // A period or slash between two letters is a separator, not
+        // punctuation, so "seam.less" scans as "seamless". Digits on
+        // either side stay as they are, so "v2.0" and "1.5" are
+        // untouched, and "and/or" scans as two ordinary words.
+        mapped = UNDERSCORE_PLACEHOLDER
       } else if (mapped === '_') {
         mapped = UNDERSCORE_PLACEHOLDER
       }
