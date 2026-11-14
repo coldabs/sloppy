@@ -1,5 +1,5 @@
+import { normalizeForScan } from './normalize'
 import {
-  HITS_PER_RULE_SCORE_CAP,
   rules,
   severityRank,
   severityWeight,
@@ -47,6 +47,23 @@ const EXCERPT_PAD = 34
 const MAX_HITS_RENDERED_PER_RULE = 40
 export const SCORE_DECAY = 55
 
+// Density scoring. A rule's contribution is its severity weight scaled
+// by how often the pattern appears per 100 words, levelling off, so
+// repeating one phrase costs more than saying it twice, but never
+// without limit. Drafts under 50 words are scored as if they were 50
+// words, so a single hit in a short note is not treated as if the
+// whole draft were that one tell. At 100 words with one hit per rule
+// the factor is close to 1, so the old scores for ordinary drafts
+// barely move.
+export const DENSITY_FLOOR_WORDS = 50
+export const DENSITY_SATURATION = 10
+
+export const densityFactor = (hits: number, words: number): number => {
+  const effectiveWords = Math.max(words, DENSITY_FLOOR_WORDS)
+  const per100 = (hits * 100) / effectiveWords
+  return per100 / (1 + per100 / DENSITY_SATURATION)
+}
+
 export const verdictBands = [
   { min: 90, label: 'Clean enough' },
   { min: 70, label: 'Mostly clean' },
@@ -72,6 +89,13 @@ const countWords = (text: string) => {
 }
 
 export const analyze = (text: string): Analysis => {
+  // Rules run on the normalised text, so lookalike letters, invisible
+  // characters and swapped dashes cannot hide a phrase. Every finding
+  // is mapped back to its span in the original text, so the highlighted
+  // copy the user sees is exactly what they pasted.
+  const { text: scanned, map } = normalizeForScan(text)
+  const words = countWords(text)
+
   const findings: Finding[] = []
   const groupMap = new Map<string, FindingGroup>()
   const counts: SeverityCounts = { high: 0, medium: 0, low: 0 }
@@ -80,25 +104,30 @@ export const analyze = (text: string): Analysis => {
   let rulesHit = 0
 
   for (const rule of rules) {
-    const matches = rule.scan(text)
+    const matches = rule.scan(scanned)
     if (matches.length === 0) continue
 
     rulesHit += 1
     hits += matches.length
-    penalty += severityWeight[rule.severity] * Math.min(matches.length, HITS_PER_RULE_SCORE_CAP)
+    penalty +=
+      severityWeight[rule.severity] * densityFactor(matches.length, words)
     counts[rule.severity] += matches.length
 
-    const ruleFindings = matches.slice(0, MAX_HITS_RENDERED_PER_RULE).map((match) => ({
-      ruleId: rule.id,
-      label: rule.label,
-      group: rule.group,
-      severity: rule.severity,
-      note: rule.note,
-      fix: rule.fix,
-      start: match.start,
-      end: match.end,
-      excerpt: buildExcerpt(text, match.start, match.end),
-    }))
+    const ruleFindings = matches.slice(0, MAX_HITS_RENDERED_PER_RULE).map((match) => {
+      const start = map[match.start] ?? text.length
+      const end = map[match.end] ?? text.length
+      return {
+        ruleId: rule.id,
+        label: rule.label,
+        group: rule.group,
+        severity: rule.severity,
+        note: rule.note,
+        fix: rule.fix,
+        start,
+        end,
+        excerpt: buildExcerpt(text, start, end),
+      }
+    })
 
     findings.push(...ruleFindings)
     groupMap.set(rule.id, { rule, hits: ruleFindings })
@@ -128,8 +157,8 @@ export const analyze = (text: string): Analysis => {
     counts,
     hits,
     rulesHit,
-    words: countWords(text),
-    penalty,
+    words,
+    penalty: Math.round(penalty * 100) / 100,
   }
 }
 

@@ -1,3 +1,5 @@
+import { UNDERSCORE_PLACEHOLDER } from './normalize'
+
 export type Severity = 'high' | 'medium' | 'low'
 export type GroupId = 'voice' | 'claims' | 'actions' | 'format'
 
@@ -34,8 +36,6 @@ export const severityRank: Record<Severity, number> = {
   low: 2,
 }
 
-export const HITS_PER_RULE_SCORE_CAP = 2
-
 export const groupMeta: Record<GroupId, { label: string; blurb: string }> = {
   voice: {
     label: 'Voice',
@@ -63,7 +63,11 @@ const phraseSource = (phrase: string) =>
     .trim()
     .split(/\s+/)
     .map(escapeRegExp)
-    .join('[\\s-]+')
+    // Words in a phrase may be joined by a space, a hyphen, an em dash
+    // (a unified separator dash), or an underscore placeholder. The
+    // normalised text uses U+2014 for standalone dashes and U+E000 for
+    // underscores, so both have to count as separators here.
+    .join('[\\s\\-\\u2014\\uE000]+')
 
 const matchPhrases = (phrases: readonly string[]) => {
   const source = phrases.map(phraseSource).join('|')
@@ -88,8 +92,20 @@ const matchPattern = (pattern: RegExp) => (text: string): RawMatch[] => {
   return matches
 }
 
-const SOURCE_CUES =
-  /\b(?:source|sources|according to|per|report|audit|survey|study|data|https?:|www\.)\b/i
+// A number is exempt only with a real citation next to it. The words
+// "data" and "per" on their own never count, and neither does a bare
+// mention of a report. A citation is either a link, or a named
+// publication together with a year, within 40 characters of the number.
+const CITATION_WINDOW = 40
+const CITATION_URL = /https?:\/\/\S+|www\.\S+/i
+const CITATION_YEAR = /\b(?:19|20)\d{2}\b/
+const CITATION_PUBLICATION =
+  /\b(?:report|study|survey|audit|paper|review|index|ranking)\b/i
+
+const hasRealCitation = (context: string): boolean => {
+  if (CITATION_URL.test(context)) return true
+  return CITATION_YEAR.test(context) && CITATION_PUBLICATION.test(context)
+}
 
 const unsourcedNumbers = (text: string): RawMatch[] => {
   const pattern =
@@ -98,8 +114,11 @@ const unsourcedNumbers = (text: string): RawMatch[] => {
   for (const match of text.matchAll(pattern)) {
     const start = match.index ?? 0
     const end = start + match[0].length
-    const context = text.slice(Math.max(0, start - 90), Math.min(text.length, end + 90))
-    if (SOURCE_CUES.test(context)) continue
+    const context = text.slice(
+      Math.max(0, start - CITATION_WINDOW),
+      Math.min(text.length, end + CITATION_WINDOW),
+    )
+    if (hasRealCitation(context)) continue
     matches.push({ start, end })
   }
   return matches
@@ -174,12 +193,61 @@ const UPPERCASE_ALLOWLIST = new Set([
 ])
 
 const shoutingCaps = (text: string): RawMatch[] => {
-  const pattern = /\b[A-Z][A-Z0-9]{2,}\b/g
+  // A caps run counts only when it stands on its own. An underscore
+  // placeholder on either side means the run is part of a snake_case
+  // identifier such as MAX_RETRIES, not a shouted word.
+  const pattern = new RegExp(
+    `(?<![\\w${UNDERSCORE_PLACEHOLDER}])[A-Z][A-Z0-9]{2,}(?![\\w${UNDERSCORE_PLACEHOLDER}])`,
+    'g',
+  )
   const matches: RawMatch[] = []
   for (const match of text.matchAll(pattern)) {
     if (UPPERCASE_ALLOWLIST.has(match[0])) continue
     const start = match.index ?? 0
     matches.push({ start, end: start + match[0].length })
+  }
+  return matches
+}
+
+// An em dash counts when it is used as a pause: standing alone, with a
+// space on at least one side, at the start or end of the draft, or
+// doubled (the "--" habit). An em dash inside a word is a compound
+// separator, not a pause, so "word—word" is left alone. HTML entities
+// for the em dash count the same way. A dash that is document structure
+// rather than a pause is left alone too: a line with no words on it (a
+// markdown table separator or horizontal rule), or a dash between two
+// links (") - [", the separator in a table of contents).
+const emDash = (text: string): RawMatch[] => {
+  const isWordChar = (ch: string | undefined): boolean =>
+    ch !== undefined && /[\p{L}\p{N}]/u.test(ch)
+  const matches: RawMatch[] = []
+  for (const match of text.matchAll(/&mdash;|&#8212;|\u2014+/g)) {
+    const start = match.index ?? 0
+    const end = start + match[0].length
+    if (match[0].startsWith('&')) {
+      matches.push({ start, end })
+      continue
+    }
+    const before = start === 0 ? undefined : text[start - 1]
+    const after = end >= text.length ? undefined : text[end]
+    if (match[0].length < 2 && isWordChar(before) && isWordChar(after)) {
+      continue
+    }
+    const lineStart = text.lastIndexOf('\n', start - 1) + 1
+    const nextNewline = text.indexOf('\n', end)
+    const lineEnd = nextNewline === -1 ? text.length : nextNewline
+    const line = text.slice(lineStart, lineEnd)
+    const lineWithoutMatch =
+      line.slice(0, start - lineStart) + line.slice(end - lineStart)
+    if (!/[\p{L}\p{N}]/u.test(lineWithoutMatch)) continue
+    let j = start - 1
+    while (j >= lineStart && (text[j] === ' ' || text[j] === '\t')) j -= 1
+    const prevNonSpace = j >= lineStart ? text[j] : undefined
+    let k = end
+    while (k < lineEnd && (text[k] === ' ' || text[k] === '\t')) k += 1
+    const nextNonSpace = k < lineEnd ? text[k] : undefined
+    if (prevNonSpace === ')' && nextNonSpace === '[') continue
+    matches.push({ start, end })
   }
   return matches
 }
@@ -192,7 +260,7 @@ export const rules: RuleDefinition[] = [
     severity: 'high',
     note: 'The single loudest punctuation tell in machine-written copy.',
     fix: 'Use a comma, colon, period, or parentheses.',
-    scan: matchPattern(/\u2014|&mdash;|&#8212;/g),
+    scan: emDash,
   },
   {
     id: 'buzzwords',
@@ -214,6 +282,7 @@ export const rules: RuleDefinition[] = [
       'seamless',
       'seamlessly',
       'game-changing',
+      'game changing',
       'game changer',
       'unleash',
       'supercharge',
@@ -236,6 +305,59 @@ export const rules: RuleDefinition[] = [
       'elevate your',
       'take it to the next level',
       "in today's fast-paced world",
+      // Split spellings of listed words. "seam less" and
+      // "revo lutionary" are not real phrases, only the listed words
+      // with a space in the middle, so they belong to this rule.
+      'seam less',
+      'revo lutionary',
+      'ground breaking',
+    ]),
+  },
+  {
+    id: 'ai-tells',
+    label: 'AI tell phrases',
+    group: 'voice',
+    severity: 'medium',
+    note: 'Stock phrases that show up in machine-written copy far more often than in human writing.',
+    fix: 'Delete the phrase, or say what actually happened.',
+    scan: matchPhrases([
+      'delve',
+      'delves',
+      'delving',
+      'tapestry',
+      'furthermore',
+      'moreover',
+      'in conclusion',
+      'embark',
+      'embarks',
+      'embarking',
+      'realm',
+      'navigate',
+      'navigates',
+      'navigating',
+      "it's important to note",
+      'it is important to note',
+      "in today's digital age",
+      'as an ai language model',
+      'welcome to the future of work',
+      'unlock your potential',
+      'join us on this journey',
+    ]),
+  },
+  {
+    id: 'ai-adjectives',
+    label: 'AI adjectives',
+    group: 'voice',
+    severity: 'low',
+    note: 'Confident adjectives that fill space without adding anything specific.',
+    fix: 'Name the specific quality, or delete the word.',
+    scan: matchPhrases([
+      'crucial',
+      'pivotal',
+      'foster',
+      'fosters',
+      'robust',
+      'landscape',
     ]),
   },
   {
@@ -275,7 +397,9 @@ export const rules: RuleDefinition[] = [
     severity: 'low',
     note: 'Repeated marks and celebration emoji stand in for emphasis.',
     fix: 'Keep one period and let the sentence carry the weight.',
-    scan: matchPattern(/[!?]{2,}|[\u{1F525}\u{1F680}\u{2728}]/gu),
+    scan: matchPattern(
+      /[!?]{2,}|[\u{1F525}\u{1F680}\u{2728}\u{1F389}\u{1F4AF}\u{1F60D}\u{1F973}\u{1F64C}\u{1F44F}\u{1F4AA}\u{1F38A}\u{2B50}\u{1F31F}]/gu,
+    ),
   },
   {
     id: 'unsourced-number',
@@ -333,6 +457,22 @@ export const rules: RuleDefinition[] = [
     ]),
   },
   {
+    id: 'vague-superlative',
+    label: 'Vague superlative',
+    group: 'claims',
+    severity: 'medium',
+    note: 'A claim of being the best, with no comparison and no proof.',
+    fix: 'Say what is actually better, and compared to what.',
+    scan: matchPhrases([
+      'best tool',
+      'best choice',
+      'ultimate choice',
+      'ultimate tool',
+      'perfect fit',
+      'perfect choice',
+    ]),
+  },
+  {
     id: 'generic-cta',
     label: 'Generic call to action',
     group: 'actions',
@@ -349,8 +489,22 @@ export const rules: RuleDefinition[] = [
       'click here',
       'read more',
       'sign up today',
+      'sign up',
+      'sign up to continue',
       'start now',
+      'start your free trial',
+      'start a free trial',
       'find out more',
+      'buy now',
+      'subscribe today',
+      'subscribe now',
+      'subscribe',
+      'download it free',
+      'download now',
+      'download free',
+      'download',
+      'book a demo',
+      'get a quote',
     ]),
   },
   {
