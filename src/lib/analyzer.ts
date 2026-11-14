@@ -4,6 +4,7 @@ import {
   severityRank,
   severityWeight,
   type GroupId,
+  type RawMatch,
   type RuleDefinition,
   type Severity,
 } from './rules'
@@ -44,7 +45,6 @@ export interface Analysis {
 }
 
 const EXCERPT_PAD = 34
-const MAX_HITS_RENDERED_PER_RULE = 40
 export const SCORE_DECAY = 55
 
 // Density scoring. A rule's contribution is its severity weight scaled
@@ -75,11 +75,6 @@ export const verdictBands = [
 export const verdictFor = (score: number): string =>
   verdictBands.find((band) => score >= band.min)?.label ?? 'Industrial slop'
 
-export const scoreFromPenalty = (penalty: number): number =>
-  penalty <= 0
-    ? 100
-    : Math.max(0, Math.min(100, Math.round(100 * Math.exp(-penalty / SCORE_DECAY))))
-
 const buildExcerpt = (text: string, start: number, end: number) => {
   const from = Math.max(0, start - EXCERPT_PAD)
   const to = Math.min(text.length, end + EXCERPT_PAD)
@@ -101,6 +96,36 @@ export const analyze = (text: string): Analysis => {
   const { text: scanned, map } = normalizeForScan(text)
   const words = countWords(text)
 
+  // Every rule scans the same normalised text, so one span can be
+  // matched by two rules: "in today's fast-paced world" is listed in
+  // both the hype vocabulary and the template opener. The same span
+  // counts once, at the worst severity — it is one piece of evidence,
+  // not two. Ties keep the rule that comes first in the list, so the
+  // result is deterministic.
+  const scannedMatches: Array<{ rule: RuleDefinition; start: number; end: number }> = []
+  for (const rule of rules) {
+    for (const match of rule.scan(scanned)) {
+      scannedMatches.push({ rule, start: match.start, end: match.end })
+    }
+  }
+  const winners = new Map<string, (typeof scannedMatches)[number]>()
+  for (const item of scannedMatches) {
+    const key = `${item.start}:${item.end}`
+    const existing = winners.get(key)
+    if (
+      !existing ||
+      severityRank[item.rule.severity] < severityRank[existing.rule.severity]
+    ) {
+      winners.set(key, item)
+    }
+  }
+  const matchesByRule = new Map<string, RawMatch[]>()
+  for (const item of winners.values()) {
+    const list = matchesByRule.get(item.rule.id) ?? []
+    list.push({ start: item.start, end: item.end })
+    matchesByRule.set(item.rule.id, list)
+  }
+
   const findings: Finding[] = []
   const groupMap = new Map<string, FindingGroup>()
   const counts: SeverityCounts = { high: 0, medium: 0, low: 0 }
@@ -109,7 +134,12 @@ export const analyze = (text: string): Analysis => {
   let rulesHit = 0
 
   for (const rule of rules) {
-    const matches = rule.scan(scanned)
+    // Every hit is returned, not just the first forty per rule. A long
+    // draft used to hide most of its findings; the panel now paginates
+    // them instead, with an exact count of what is shown.
+    const matches = (matchesByRule.get(rule.id) ?? []).sort(
+      (a, b) => a.start - b.start,
+    )
     if (matches.length === 0) continue
 
     rulesHit += 1
@@ -118,7 +148,7 @@ export const analyze = (text: string): Analysis => {
       severityWeight[rule.severity] * densityFactor(matches.length, words)
     counts[rule.severity] += matches.length
 
-    const ruleFindings = matches.slice(0, MAX_HITS_RENDERED_PER_RULE).map((match) => {
+    const ruleFindings = matches.map((match) => {
       const start = map[match.start] ?? text.length
       const end = map[match.end] ?? text.length
       return {
@@ -149,7 +179,10 @@ export const analyze = (text: string): Analysis => {
       a.rule.label.localeCompare(b.rule.label),
   )
 
-  const score = scoreFromPenalty(penalty)
+  const score =
+    penalty === 0
+      ? 100
+      : Math.max(0, Math.min(100, Math.round(100 * Math.exp(-penalty / SCORE_DECAY))))
 
   return {
     score,

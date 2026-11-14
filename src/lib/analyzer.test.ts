@@ -185,17 +185,15 @@ describe('analyze', () => {
     expect(result.findings).toHaveLength(0)
   })
 
-  it('still flags "Explore the codebase" (a known P1 false positive, not fixed here)', () => {
-    // Deliberately left as it is. P1 will add context exemptions for
-    // documentation use. The score moved from 85 to 76 only because
-    // the P0 density formula weighs one hit in a 9-word draft more
-    // heavily than the old flat penalty did, not because the rule
-    // changed.
+  it('leaves "Explore the codebase" alone (a P1 fix, not a P0 one)', () => {
+    // P1-5, intentional change: "Explore" followed by documentation
+    // words is navigation, not a sales button. The old P0 test
+    // asserted the opposite and was replaced by this one.
     const result = analyze('Explore the codebase and read the contributing guide.')
-    expect(ruleIds('Explore the codebase and read the contributing guide.')).toContain(
+    expect(ruleIds('Explore the codebase and read the contributing guide.')).not.toContain(
       'generic-cta',
     )
-    expect(result.score).toBe(76)
+    expect(result.score).toBe(100)
   })
 })
 
