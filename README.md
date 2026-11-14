@@ -40,7 +40,7 @@ Trust your ear over the score.
 
 ### Copy
 
-Paste a landing page, a launch post, or any text. The scanner runs eighteen
+Paste a landing page, a launch post, or any text. The scanner runs twenty-eight
 rules over the draft and marks each hit in place.
 
 | Group | What it looks for |
@@ -50,6 +50,8 @@ rules over the draft and marks each hit in place.
 | Actions | Labels that hide what the click actually does |
 | Format | Template typographic habits, such as long all-caps runs |
 | Structure | The shape of the writing: cadence, repetition, and density |
+| Diversity | How varied the writing is: sentence-length rhythm, vocabulary range, repeated word pairs, transition stacking |
+| Substance | Whether the text says anything concrete: substance-poor paragraphs, uncited authority claims, pseudo-wisdom filler |
 
 The full list, with the wording for each rule and its suggested fix, is in
 [docs/METHOD.md](docs/METHOD.md), and the page renders that same list from the
@@ -73,7 +75,7 @@ stylesheets, and the browser analyzes three things:
    radial orbs, blue-purple palettes, repeating background lines, oversized
    shadows, and glow clusters. Each signal is counted, not judged from one
    declaration.
-3. **Copy:** the visible page text runs through the same eighteen copy rules,
+3. **Copy:** the visible page text runs through the same twenty-eight copy rules,
    with the matched text marked.
 
 The website rules live in `src/lib/siteRules.ts` and the copy rules in
@@ -113,9 +115,18 @@ static server plus API in production. `npm run preview` is an alias for
    Drafts under 50 words are scored as if they were 50 words.
 3. The penalty decays on a curve: `score = round(100 * e^(-penalty / 55))`.
 
-Three structural checks look at the shape of the writing rather than its
-words: runs of same-length sentences, repeated sentence openings, and
-sentences stuffed with -ly adverbs.
+Seven rule groups look at the shape of the writing rather than its
+words: runs of same-length sentences, repeated sentence openings,
+sentences stuffed with -ly adverbs, and triplets on autopilot
+(structure); sentence-length rhythm, vocabulary range, repeated word
+pairs, and transition stacking (diversity); and paragraphs with no
+concrete fact, uncited authority claims, and pseudo-wisdom filler
+(substance). The diversity thresholds are calibrated on a clean corpus
+and stated in [docs/METHOD.md](docs/METHOD.md): burstiness under 0.12,
+type-token ratio bands by length, at least 80 words before any of them
+fire, and legal and technical text exempt. The em dash counts only at
+density — more than 20 pause-dashes per 1,000 words, at least 3 of
+them — so ordinary literary prose stays clean.
 
 Before scanning, the draft is normalised. Invisible characters are
 stripped, lookalike letters are folded to Latin, and dash and hyphen
