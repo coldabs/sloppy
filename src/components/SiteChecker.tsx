@@ -234,6 +234,16 @@ export function SiteChecker() {
           throw new Error('That URL did not return an HTML page.')
         }
 
+        // pageUrl stays the typed target (F41): the proxy follows
+        // redirects server-side and returns the destination's HTML,
+        // but it exposes no final URL — no header carries it, and
+        // response.url is the proxy URL itself, not the target's.
+        // Setting pageUrl from response.url would resolve every
+        // relative stylesheet link against proxy.corsfix.com and
+        // break stylesheet fetching for every proxy scan. A
+        // cross-path redirect through the proxy therefore keeps the
+        // origin path as its base; same-path redirects (http→https,
+        // trailing slash) are unaffected.
         pageUrl = target
         html = await response.text()
         stylesheets = await fetchStylesheets(pageUrl, html, signal, 'proxy')
