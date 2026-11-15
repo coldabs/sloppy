@@ -76,11 +76,12 @@ including cross-origin CDN CSS, and the browser analyzes three things:
    radial orbs, blue-purple palettes, repeating background lines, oversized
    shadows, and glow clusters. Each signal is counted, not judged from one
    declaration.
-3. **Copy:** the visible page text runs through the same twenty-eight copy rules,
+3. **Copy:** the visible page text runs through the same 29 copy rules,
    with the matched text marked.
 
 The website rules live in `src/lib/siteRules.ts` and the copy rules in
-`src/lib/rules.ts`. The Method section renders both lists from that same data.
+`src/lib/rules/` — one module per rule group, re-exported by the
+`src/lib/rules.ts` barrel. The Method section renders both lists from that same data.
 
 ## Run it
 
@@ -222,23 +223,25 @@ functions automatically and does not offer the public proxy.
    limit. A phrase matched by two rules counts once, at the higher
    severity.
 2. One hit in a short draft costs far more than the same hit in a long one.
-   Short drafts are scored against an adaptive floor: a one-word draft is
-   judged as 12 words, scaling smoothly to 50 words at 23 words. Density is
+   Short drafts are scored against an adaptive floor: a draft is
+   judged at its own length, down to a minimum of 8 words and capped
+   at 50, and a draft under 8 words is too short to score. Density is
    also measured over the worst 100-word sliding window (step 25 words) and
-   blended 0.35 global / 0.65 peak, so a sloppy passage cannot be washed out
+   blended 0.15 global / 0.85 peak, so a sloppy passage cannot be washed out
    by clean filler — and a sentence where three or more distinct rule groups
    fire costs 25% more than the same signals spread out.
 3. The penalty decays on a curve: `score = round(100 * e^(-penalty / 55))`.
 
-Seven rule groups look at the shape of the writing rather than its
+Three of the seven rule groups look at the shape of the writing rather than its
 words: runs of same-length sentences, repeated sentence openings,
 sentences stuffed with -ly adverbs, and triplets on autopilot
 (structure); sentence-length rhythm, vocabulary range, repeated word
 pairs, and transition stacking (diversity); and paragraphs with no
 concrete fact, uncited authority claims, and pseudo-wisdom filler
-(substance). The diversity thresholds are calibrated on a clean corpus
+(substance). The other four groups — voice, claims, actions, format —
+look at the words themselves. The diversity thresholds are calibrated on a clean corpus
 and stated in [docs/METHOD.md](docs/METHOD.md): burstiness under 0.12,
-type-token ratio bands by length, at least 80 words before any of them
+moving-average type-token ratio (MATTR) under 0.60, at least 80 words before any of them
 fire, and legal and technical text exempt. The em dash counts only at
 density — more than 20 pause-dashes per 1,000 words, at least 3 of
 them — so ordinary literary prose stays clean.
@@ -340,7 +343,16 @@ src/
     cliEntry.ts        CLI bundle entry (DOM shim for analyzeSite in node)
     sarif.ts           SARIF 2.1.0 rendering of an analysis
     normalize.ts       lookalike, invisible character, and dash folding
-    rules.ts           copy rules, lexicons, weights, group metadata
+    rules.ts           copy rules barrel (re-exports the modules below)
+    rules/
+      actions.ts       call-to-action labels
+      claims.ts        numbers and credentials without proof
+      common.ts        shared types, weights, and helpers
+      diversity.ts     sentence rhythm and vocabulary range
+      format.ts        template typographic habits
+      structure.ts     cadence, repetition, density
+      substance.ts     concrete facts and filler
+      voice.ts         hype vocabulary and AI tells
     siteAnalyzer.ts    site scoring and result assembly
     siteRules.ts       DOM and CSS rule implementations
     target.ts          URL normalisation and private-host checks
@@ -380,8 +392,8 @@ See the audit notes in the repository history if they are kept with the project.
 
 Website mode reads a static fetch. It cannot see JavaScript-rendered content,
 computed styles, hover states, animation, responsive layout, or any page behind
-a login. Style checks count declarations in fetched CSS and inline styles; they
-do not know which element a declaration applies to. The public-proxy fallback
+a login. Style checks count declarations in fetched CSS and inline styles; each
+rule counts only when its selector matches an element in the document. The public-proxy fallback
 adds its own limits: it may be rate-limited, can be blocked by the target site,
 and does not report the final URL after redirects, so relative assets can miss.
 

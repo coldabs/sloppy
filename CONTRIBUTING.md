@@ -15,7 +15,8 @@ useful by staying small and honest. That is the whole guide, in practice.
 ## Rules for rules
 
 The scanner and the documentation share one source of truth:
-`src/lib/rules.ts`. That is where a rule lives, and the page and
+`src/lib/rules/` — one module per rule group, re-exported by the
+`src/lib/rules.ts` barrel. That is where a rule lives, and the page and
 `docs/METHOD.md` both describe it from there.
 
 - A new rule needs a test in `src/lib/analyzer.test.ts` that shows a
@@ -52,7 +53,7 @@ than leaving it for the reviewer.
 
 A human reads every issue and pull request. Nothing merges on its own.
 Expect questions, especially about false positives and about whether a
-new rule earns its place in a list of twelve.
+new rule earns its place in a list of 29.
 
 ## License
 
