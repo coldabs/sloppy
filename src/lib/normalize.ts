@@ -336,6 +336,10 @@ export const normalizeForScan = (original: string): NormalizedText => {
     for (const foldedChar of [...folded]) {
       let mapped = HOMOGLYPHS.get(foldedChar) ?? foldedChar
 
+      // Curly apostrophes are what word processors and phones produce
+      // by default — fold them so "today's" matches "today's".
+      if (mapped === '\u2019' || mapped === '\u2018') mapped = "'"
+
       if (mapped === EM_DASH) {
         // Keep the em dash itself, whatever surrounds it.
       } else if (DASH_VARIANTS.has(mapped)) {
