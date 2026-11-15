@@ -26,12 +26,15 @@ const CITATION_YEAR = /\b(?:19|20)\d{2}\b/
 const CITATION_PUBLICATION =
   /\b(?:report|study|survey|audit|paper|review|index|ranking)\b/gi
 
-// Words that can appear in a link that points at evidence.
+// Words that can appear in a link that points at evidence. The link
+// itself has to look like evidence: wording next to a bare link does
+// not count — "according to a 2024 report. See https://example.com/pricing"
+// cleared a real hit that way, because "report" sat next to a pricing
+// link. A named publication with a year is the other way to cite
+// (see hasNamedCitation below); a bare "2024 report" with no outlet
+// named is not a citation.
 const EVIDENCE_PATH_WORD =
   /\b(?:report|survey|study|audit|paper|research|finding|findings|result|results|census|benchmark|analysis|whitepaper|dataset|data-set|statistics|stats)\b/i
-
-const EVIDENCE_WORD =
-  /\b(?:report|survey|study|audit|paper|research|finding|findings|result|results|census|benchmark|analysis|whitepaper)\b/i
 
 // A link counts when it starts within 40 characters of the number.
 // The whole text is scanned for links, so a long URL is judged by its
@@ -47,7 +50,6 @@ export interface FoundUrl {
 
 const hasEvidenceLink = (
   urls: FoundUrl[],
-  text: string,
   start: number,
   end: number,
   spans?: SentenceSpan[],
@@ -70,10 +72,10 @@ const hasEvidenceLink = (
     if (urlStart < start - CITATION_WINDOW || urlStart > end + CITATION_WINDOW) {
       continue
     }
+    // The link itself has to look like evidence. Wording next to a
+    // bare link used to count here, and it let a pricing link clear a
+    // hit whenever "report" or "study" sat beside it.
     if (EVIDENCE_PATH_WORD.test(url)) return true
-    const before = text.slice(Math.max(0, urlStart - 40), urlStart)
-    const after = text.slice(urlStart + raw.length, urlStart + raw.length + 40)
-    if (EVIDENCE_WORD.test(before) || EVIDENCE_WORD.test(after)) return true
   }
   return false
 }
@@ -124,7 +126,7 @@ const hasCitationNear = (
   end: number,
   spans?: SentenceSpan[],
 ): boolean =>
-  hasEvidenceLink(urls, text, start, end, spans) ||
+  hasEvidenceLink(urls, start, end, spans) ||
   hasNamedCitation(text, start, end)
 
 // The social-proof phrases, shared by the rule below and by the number
