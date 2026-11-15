@@ -9,7 +9,7 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { analyze } from '../src/lib/analyzer'
+import { analyze, MIN_SCORE_WORDS } from '../src/lib/analyzer'
 import { rules } from '../src/lib/rules'
 
 // CI gates (Teamly §4.8): the run fails when the held-out test split
@@ -82,9 +82,17 @@ describe('bench: labelled corpus', () => {
     return {
       ...entry,
       score: result.score,
+      words: result.words,
       ruleIds: [...new Set(result.findings.map((f) => f.ruleId))],
     }
   })
+
+  // F21 (2026-11-15): entries under MIN_SCORE_WORDS have no meaningful
+  // score — the verdict is "Too short to score" — so they are excluded
+  // from every metric (binary, grey-zone, per-rule) and reported as
+  // skipped. They stay in the frozen corpus; their labels are inert.
+  const scorable = scored.filter((row) => row.words >= MIN_SCORE_WORDS)
+  const skipped = scored.length - scorable.length
 
   it('is frozen and well-formed', () => {
     // Adding entries is a deliberate act (see bench/README.md); the
@@ -99,9 +107,14 @@ describe('bench: labelled corpus', () => {
   })
 
   it('meets the precision/recall gates on the held-out test split', () => {
+    console.log(
+      `too short to score: ${skipped} of ${scored.length} entries skipped`,
+    )
     for (const name of ['all', 'dev', 'test'] as const) {
       const rows =
-        name === 'all' ? scored : scored.filter((row) => row.split === name)
+        name === 'all'
+          ? scorable
+          : scorable.filter((row) => row.split === name)
       const m = metricsFor(rows)
       console.log(
         `${name}: n=${m.n} tp=${m.tp} fp=${m.fp} fn=${m.fn} tn=${m.tn} ` +
@@ -112,7 +125,7 @@ describe('bench: labelled corpus', () => {
         expect(m.recall).toBeGreaterThanOrEqual(RECALL_GATE)
       }
     }
-    const grey = scored.filter((row) => row.label === 'grey')
+    const grey = scorable.filter((row) => row.label === 'grey')
     const inBand = grey.filter(
       (row) => row.score >= 70 && row.score < 90,
     ).length
@@ -120,7 +133,7 @@ describe('bench: labelled corpus', () => {
   })
 
   it('reports per-rule precision', () => {
-    const bin = scored.filter((row) => row.label !== 'grey')
+    const bin = scorable.filter((row) => row.label !== 'grey')
     const byRule = new Map<string, { slop: number; clean: number }>()
     for (const row of bin) {
       for (const ruleId of row.ruleIds) {

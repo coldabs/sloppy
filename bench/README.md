@@ -56,6 +56,8 @@ editing a label to make the engine pass.
 
 - **Deliberate label changes** (with a note, never silent):
   - 2026-11-15 (F20): `C28` `clean` → `grey`. The probe was pinned `clean` only because the testimonial cliche ("I love this product so much") was missed at 100; the F20 fix now flags it (score 70, in the grey zone), and the stress-test band was re-pinned `clean` → `mostly` in the same change.
+  - 2026-11-15 (F21): `A12`, `C10`, `C13b`, `C19`, `C28`, `C32` `grey` → `slop`, and `C11` `clean` → `grey`. The floor is now the draft's own length, so the same hits score lower (A12 62, C10 64, C13b 65, C19 65, C28 53, C32 53) and the stress-test bands were re-pinned `mostly` → `slop` in the same change; C11 moved 90 → 89 on the 0.15/0.85 blend, one point across the clean boundary, and its band was re-pinned `clean` → `mostly`.
+- **Too short to score**: entries under `MIN_SCORE_WORDS` (8 words) have no meaningful score, so the bench excludes them from every metric and reports them as skipped (7 of 131: B20, B35, D03, D04, D05, D11, D12). Their labels stay in the frozen corpus but are inert.
 - **Adding entries**: append new lines with a fresh id, a label, and
   a split (keep the 70/30 balance roughly). Record the addition here.
 - **Never change a label to make the engine pass.** If an entry's
