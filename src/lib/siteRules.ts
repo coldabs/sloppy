@@ -578,6 +578,193 @@ const GROUPING_AT_RULES = new Set(['@media', '@supports', '@layer', '@container'
 
 const atRuleName = (selector: string) => selector.split(/\s/, 1)[0].toLowerCase()
 
+// The desktop viewport @media is evaluated against (F36): a 1280x800
+// landscape screen, light colour scheme, no reduced-motion
+// preference, hover and a fine pointer. A rule inside a query that
+// does not match this viewport is not what a desktop visitor sees,
+// so it is not counted — a mobile-only layout or a dark-mode
+// override no longer inflates the desktop style signals. A query
+// that cannot be judged (an unknown feature or unit) is treated as
+// matching: rules are only dropped on a positive mismatch, never on
+// a guess.
+const DESKTOP_MEDIA = {
+  width: 1280,
+  height: 800,
+  'device-width': 1280,
+  'device-height': 800,
+  orientation: 'landscape',
+  'prefers-color-scheme': 'light',
+  'prefers-reduced-motion': 'no-preference',
+  hover: 'hover',
+  'any-hover': 'hover',
+  pointer: 'fine',
+  'any-pointer': 'fine',
+  color: 8,
+  monochrome: 0,
+  scan: 'progressive',
+  update: 'fast',
+  'overflow-block': 'scroll',
+  'overflow-inline': 'scroll',
+} as const
+
+type TriState = boolean | null
+
+const and3 = (a: TriState, b: TriState): TriState =>
+  a === false || b === false ? false : a === null || b === null ? null : true
+
+const or3 = (a: TriState, b: TriState): TriState =>
+  a === true || b === true ? true : a === null || b === null ? null : false
+
+const mediaLengthPx = (value: string): number | null => {
+  const match = /^(-?\d+(?:\.\d+)?)(px|em|rem)?$/.exec(value.trim().toLowerCase())
+  if (!match) return null
+  const num = Number(match[1])
+  if (match[2] === 'em' || match[2] === 'rem') return num * 16
+  return num
+}
+
+const compareMedia = (op: string, left: number, right: number): boolean => {
+  switch (op) {
+    case '<':
+      return left < right
+    case '<=':
+      return left <= right
+    case '>':
+      return left > right
+    case '>=':
+      return left >= right
+    case '=':
+      return left === right
+    default:
+      return false
+  }
+}
+
+// One parenthesised media feature, e.g. "max-width: 600px" or
+// "width >= 600px". Null when the feature cannot be judged.
+const mediaFeatureMatches = (feature: string): TriState => {
+  const text = feature.trim()
+  if (!text) return null
+  // Range syntax: "600px <= width < 1200px", "width >= 600px".
+  const rangeParts = text.split(/\s+/).filter(Boolean)
+  const isRange =
+    rangeParts.length >= 3 &&
+    (rangeParts.includes('<') ||
+      rangeParts.includes('<=') ||
+      rangeParts.includes('>') ||
+      rangeParts.includes('>=') ||
+      rangeParts.includes('='))
+  if (isRange) {
+    // A range is a chain of operands joined by operators:
+    // "width >= 600px" or "600px <= width < 1200px". Anything else
+    // shaped is unjudgeable. An operand is a length or a known
+    // feature name; an unknown name makes its comparison unknown.
+    const isOp = (t: string) => t === '<' || t === '<=' || t === '>' || t === '>=' || t === '='
+    const ops = rangeParts.filter(isOp)
+    const operands = rangeParts.filter((t) => !isOp(t))
+    if (operands.length < 2 || operands.length > 3 || ops.length !== operands.length - 1) {
+      return null
+    }
+    const valueOf = (operand: string): number | null => {
+      const length = mediaLengthPx(operand)
+      if (length !== null) return length
+      const desktop = desktopMediaLength(operand)
+      return Number.isNaN(desktop) ? null : desktop
+    }
+    let result: TriState = true
+    for (let k = 0; k < ops.length; k++) {
+      const left = valueOf(operands[k])
+      const right = valueOf(operands[k + 1])
+      result = and3(
+        result,
+        left === null || right === null ? null : compareMedia(ops[k], left, right),
+      )
+    }
+    return result
+  }
+
+  const colon = text.indexOf(':')
+  if (colon !== -1) {
+    const rawName = text.slice(0, colon).trim().toLowerCase()
+    const rawValue = text.slice(colon + 1).trim().toLowerCase()
+    const minMatch = /^min-(.+)$/.exec(rawName)
+    const maxMatch = /^max-(.+)$/.exec(rawName)
+    const baseName = minMatch?.[1] ?? maxMatch?.[1] ?? rawName
+    const desktop = (DESKTOP_MEDIA as Record<string, string | number>)[baseName]
+    if (desktop === undefined) return null
+    const length = mediaLengthPx(rawValue)
+    if (length !== null && typeof desktop === 'number') {
+      if (minMatch) return desktop >= length
+      if (maxMatch) return desktop <= length
+      return desktop === length
+    }
+    if (length === null && typeof desktop === 'string') {
+      if (minMatch || maxMatch) return null
+      return desktop === rawValue
+    }
+    return null
+  }
+
+  // A bare feature name, e.g. "(color)": true when the desktop has
+  // any of it.
+  const desktop = (DESKTOP_MEDIA as Record<string, string | number>)[text.toLowerCase()]
+  if (desktop === undefined) return null
+  return typeof desktop === 'number' ? desktop > 0 : true
+}
+
+const desktopMediaLength = (name: string): number => {
+  const desktop = (DESKTOP_MEDIA as Record<string, string | number>)[name.toLowerCase()]
+  return typeof desktop === 'number' ? desktop : NaN
+}
+
+// One comma-separated media query, e.g. "screen and (max-width:
+// 600px)". Null when it cannot be judged.
+const mediaQueryMatches = (query: string): TriState => {
+  let text = query.trim()
+  let negate = false
+  const notMatch = /^not\s+/i.exec(text)
+  if (notMatch) {
+    negate = true
+    text = text.slice(notMatch[0].length)
+  }
+  text = text.replace(/^only\s+/i, '')
+  let result: TriState = true
+  let first = true
+  for (const part of text.split(/\s+and\s+/i)) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    if (first && !trimmed.startsWith('(')) {
+      const type = trimmed.toLowerCase()
+      result = and3(
+        result,
+        type === 'screen' || type === 'all' ? true : type === 'print' || type === 'speech' ? false : null,
+      )
+      first = false
+      continue
+    }
+    first = false
+    if (!trimmed.startsWith('(') || !trimmed.endsWith(')')) {
+      result = and3(result, null)
+      continue
+    }
+    result = and3(result, mediaFeatureMatches(trimmed.slice(1, -1)))
+  }
+  return negate ? (result === null ? null : !result) : result
+}
+
+// Whether an @media prelude applies to the desktop viewport. A list
+// is an OR of its queries; an unjudgeable query counts as matching,
+// so rules are only dropped on a positive mismatch.
+const mediaApplies = (selector: string): boolean => {
+  const prelude = selector.replace(/^@media\s*/i, '')
+  let result: TriState = false
+  for (const query of splitSelectorList(prelude)) {
+    result = or3(result, mediaQueryMatches(query))
+    if (result === true) return true
+  }
+  return result !== false
+}
+
 // One rule (selector + body) with its parent selector already known:
 // flatten native nesting into the enclosing selector, keep the rule's
 // own declarations, and recurse into nested blocks. An at-rule nested
@@ -596,7 +783,12 @@ const processRule = (
     if (block.selector.startsWith('@')) {
       const name = atRuleName(block.selector)
       if (!GROUPING_AT_RULES.has(name)) continue
-      if (name === '@media' && /\b(?:print|speech)\b/i.test(block.selector)) continue
+      // @media is evaluated against the desktop viewport (F36);
+      // @supports/@layer/@container are flattened: @layer is
+      // ordering only, @supports is a capability check a modern
+      // browser passes, and a @container's size cannot be known
+      // statically, so its rules count as potentially visible.
+      if (name === '@media' && !mediaApplies(block.selector)) continue
       collectCssRules(block.body, combined, rules)
       continue
     }
@@ -648,8 +840,9 @@ const collectCssRules = (text: string, parent: string | null, rules: ParsedCssRu
     if (selector.startsWith('@')) {
       const name = atRuleName(selector)
       if (!GROUPING_AT_RULES.has(name)) continue
-      // Print (and speech) styles are not what the visitor sees.
-      if (name === '@media' && /\b(?:print|speech)\b/i.test(selector)) continue
+      // @media is evaluated against the desktop viewport (F36); see
+      // the note in processRule for @supports/@layer/@container.
+      if (name === '@media' && !mediaApplies(selector)) continue
       collectCssRules(body, parent, rules)
       continue
     }
