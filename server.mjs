@@ -4,7 +4,7 @@ import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer as createViteServer } from 'vite'
-import { FetchError, fetchCss, fetchPage } from './server/fetch.mjs'
+import { handleFetchCss, handleFetchPage } from './server/handlers.mjs'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const distRoot = path.resolve(root, 'dist')
@@ -35,25 +35,6 @@ const sendJson = (response, status, payload) => {
     'cache-control': 'no-store',
   })
   response.end(body)
-}
-
-const runFetch = async (action) => {
-  try {
-    return { ok: true, value: await action() }
-  } catch (error) {
-    if (error instanceof FetchError) {
-      return {
-        ok: false,
-        status: error.status,
-        body: { error: error.code, message: error.message },
-      }
-    }
-    return {
-      ok: false,
-      status: 502,
-      body: { error: 'fetch-failed', message: 'The page could not be fetched.' },
-    }
-  }
 }
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
@@ -114,37 +95,28 @@ const handleApi = async (request, response, url) => {
     return true
   }
 
+  // The fetch endpoints are the shared handlers now (F71): the
+  // local server used to duplicate their validation, error mapping,
+  // and the css 403-passthrough. The origin check above stays here —
+  // it is local-server-only — and the handlers add the per-IP rate
+  // limit and the 5-minute cache.
   if (url.pathname === '/api/fetch') {
-    const target = url.searchParams.get('url') ?? ''
-    if (target.length > 2048) {
-      sendJson(response, 414, { error: 'url-too-long', message: 'That URL is too long.' })
-      return true
-    }
-    const result = await runFetch(() => fetchPage(target, { allowPrivate }))
-    if (result.ok) sendJson(response, 200, result.value)
-    else sendJson(response, result.status, result.body)
+    const { status, payload } = await handleFetchPage(
+      'GET',
+      url.searchParams.get('url') ?? '',
+      { ip: request.socket.remoteAddress, allowPrivate },
+    )
+    sendJson(response, status, payload)
     return true
   }
 
   if (url.pathname === '/api/css') {
-    const target = url.searchParams.get('url') ?? ''
-    if (!target || target.length > 4096) {
-      sendJson(response, 400, {
-        error: 'invalid-request',
-        message: 'A stylesheet URL is required.',
-      })
-      return true
-    }
-    const result = await runFetch(() => fetchCss(target, { allowPrivate }))
-    if (result.ok) {
-      sendJson(response, 200, result.value)
-    } else if (result.status === 403) {
-      sendJson(response, 403, result.body)
-    } else {
-      // Stylesheets are optional enrichment. A blocked, slow, or oversized
-      // sheet should not fail the page scan or log a console error.
-      sendJson(response, 200, { url: target, css: '' })
-    }
+    const { status, payload } = await handleFetchCss(
+      'GET',
+      url.searchParams.get('url') ?? '',
+      { ip: request.socket.remoteAddress, allowPrivate },
+    )
+    sendJson(response, status, payload)
     return true
   }
 
