@@ -1,7 +1,8 @@
 # Method
 
 How sloppy scores a draft, in full. Everything here comes from
-`src/lib/rules.ts` and `src/lib/analyzer.ts`. The page renders its rule
+`src/lib/rules/` (one module per rule group, re-exported by the
+`src/lib/rules.ts` barrel) and `src/lib/analyzer.ts`. The page renders its rule
 ledger from the same data, so this document and the scanner cannot drift
 apart. If they ever disagree, the code is right and this document needs
 fixing.
@@ -19,6 +20,71 @@ when a page is longer than that. The server resolves a hostname once
 and connects to the address it validated, so a hostname whose DNS
 answer changes mid-fetch cannot redirect the request to a private
 address. See the README for the fetch guards and the static-analysis limits.
+
+## Website mode
+
+Style signals are counted from the CSS the page actually uses, not
+from the raw stylesheet text. Each stylesheet rule counts only when
+its selector matches an element in the document (checked with the
+selector engine, with a class/id/type token fallback for selectors
+it cannot evaluate, such as `:hover`); inline `style="..."` attributes
+count because the element carrying them exists. Rules inside
+`@media print` and `@media speech` do not count, and neither do
+`@keyframes` or `@font-face`. That kills the old false positive where
+three unused framework utilities, or one rule inside a print block,
+fired pill-radius on a page that used none of them — but a real
+stylesheet whose classes elements do use still fires exactly as
+before.
+
+Tailwind utilities are counted in the DOM as well, from element class
+attributes: `rounded-full`, `backdrop-blur-md`, `bg-indigo-600`,
+`shadow-2xl` and their kin (including variant-prefixed forms such as
+`sm:rounded-full`). Forty elements using `rounded-full` count as
+forty pill uses even though the sheet defines the utility once. The
+reported total is used-CSS signals plus DOM utility uses, minus the
+signals that came from the definition of a utility the DOM already
+counted — a Tailwind sheet's one `.rounded-full` definition is not a
+forty-first pill. The thresholds did not move: pill radius and glass
+surfaces need 3, radial orbs 2, the blue-purple palette 2, the
+background grid 1, oversized shadows 3, glow clusters 2.
+
+Colours are read as colours, not strings. The palette rule counts
+the ten hex codes and the colour words as before, plus `oklch()` hues
+from 250 to 330 with chroma above 0.02 (indigo ~277, violet ~293,
+purple ~304, fuchsia ~322; hue exactly 310 counts, as do the alpha
+form `oklch(... / 0.5)` and a `deg` suffix), `hsl()` hues from 215
+to 330 with saturation above zero (hsl runs on a different hue scale
+from oklch — indigo is ~239 there, blue ~217), `rgb()` hues on the
+same 215–330 range, and `var(--*)` references resolved from the
+custom properties the document defines, including `hsl(var(--primary))`
+where the property holds bare channel values. A `var()` named for
+indigo, violet, purple or fuchsia counts even when its definition was
+not fetched. A grey `oklch()` (zero chroma) or a green `hsl()` hue
+does not count. The palette still covers every Tailwind shade from
+50 to 950 plus the bare colour (`bg-indigo`).
+
+Dead links are counted, not deduplicated: twenty-five footer links
+that all point at `#` are twenty-five dead links. Unnamed controls
+and images without alt are counted the same way. The findings list is
+still sliced for display — dead links and unnamed controls at 400,
+missing alt at 300 — but the count and the penalty reflect every
+occurrence found, not just the ones shown: the first shown hit carries
+the full count. The three-step rule matches the whole class token `step` (any case)
+or `step` plus a number (`step-1`, `step_2`, `step3`); `stepper`,
+`step-brother` and `multi-step-form` are not steps. The ordered-list
+check is unchanged: a genuine three-item `<ol>` still fires.
+
+Limits of the correlation: selector matching is approximate for
+compound selectors (`.a .b` counts when both classes occur somewhere,
+not necessarily nested), attribute selectors such as
+`[class*="step"]` are assumed used, CSS nesting (`&`) inside a rule
+body is not parsed, and a `var()` fallback containing parentheses is
+not expanded. Text extraction is unchanged: only `script`, `style`,
+`noscript`, `template`, `svg`, `canvas` and `iframe` are removed, so
+navigation menus, cookie banners and hidden modals are still mashed
+into the copy analysis as if they were prose. That is a known
+limitation — there is no visibility engine — not a claim that the
+copy text is clean prose.
 
 ## Scoring
 
@@ -38,9 +104,23 @@ address. See the README for the fetch guards and the static-analysis limits.
    document-level rules, flat rhythm and narrow vocabulary range,
    compute their own penalty instead of the standard one: it scales
    with how far the measured value sits past the threshold, up to
-   2.5 times the low weight.
+   2.5 times the low weight. The standard penalty is density measured
+   twice and blended: once over the whole draft, and once over the
+   worst 100-word sliding window (step 25 words), combined as
+   0.35 * global + 0.65 * peak, so a sloppy passage cannot be washed
+   out by clean filler. A sentence where three or more distinct
+   phrase-rule groups fire carries an extra 25% of its apportioned
+   penalty share: co-occurring signals in one sentence are one
+   concentrated piece of evidence, not independent tells. Only the
+   phrase-level groups (voice, claims, actions, format) count;
+   document-level rules span whole sentences or paragraphs, so they
+   are not sentence-local evidence and take no part in the boost.
 2. One hit in a short draft costs far more than the same hit in a long
-   one. Drafts under 50 words are scored as if they were 50 words.
+   one. Short drafts are scored against an adaptive floor,
+   min(50, max(12, round(words * 2.2))): a one-word draft is judged
+   as 12 words, a five-word tagline as 12 too, scaling smoothly up to
+   50 words at 23 words. A one-word draft containing a listed word
+   ("seamless") scores 48.
 3. The penalty decays on a curve:
 
    `score = round(100 * e^(-penalty / 55))`
@@ -67,7 +147,9 @@ combining marks stripped, zero-width characters stripped, Cyrillic,
 Greek, Armenian, and small-capital lookalikes folded to Latin, dash
 and hyphen variants unified, and underscores treated as separators. A
 period or slash between two letters is a separator too, so "seam.less"
-scans as "seamless" while "v2.0" is untouched. A dash is judged by the
+scans as "seamless" while "v2.0" is untouched — unless the separator
+sits inside a domain name, file path, or common slash compound, which
+stay whole ("nextjs.org", "src/lib/rules.ts", "and/or"). A dash is judged by the
 letters that survive normalisation on either side of it, so a
 zero-width character next to a hyphen cannot turn a compound word into
 a pause. Findings are mapped back to the exact span in the original
@@ -87,10 +169,10 @@ Words that perform confidence instead of naming a capability.
 | Rule | Severity | What it catches | Fix |
 | --- | --- | --- | --- |
 | Em dash (`em-dash`) | Medium | Pause-dashes at density only: more than 20 pause-dashes per 1,000 words, and at least 3 of them. One dash in a short note is left alone, and so is dash-heavy literary prose at about 10 per 1,000. Its HTML forms `&mdash;` and `&#8212;` count. En dashes, double hyphens, and spaced hyphens count the same way, because the draft is normalised before scanning. An em dash inside a word is a compound separator, not a pause, and is left alone. So is a dash that is document structure: a list bullet, a line with no words on it (a table separator or horizontal rule), or a dash between two links. A dash that opens a line of dialogue — the French, Russian, and Spanish convention, "— Bonjour" — is a speaker turn, not a pause, and is left alone, and dialogue lines do not count toward same-length sentence runs. A minus sign, as in e^(-penalty / 55), is not a pause either. A command-line flag such as `--json` is not a pause. A pair of dashes that opens and closes one interruption counts once, not twice. | Use a comma, colon, period, or parentheses. |
-| Hype vocabulary (`buzzwords`) | Medium | "ai-powered" / "ai powered", "revolutionary", "revolutionize" / "revolutionizing", "next-generation" / "next generation", "cutting-edge" / "cutting edge", "groundbreaking", "unparalleled", "seamless" / "seamlessly", "game-changing" / "game changing" / "game changer", "unleash", "supercharge", "turbocharge" / "turbocharged", "state-of-the-art" / "state of the art", "best-in-class", "world-class", "industry-leading", "market-leading", "award-winning", "transformative", "disruptive", "synergy" / "synergies", "paradigm shift", "empower", "effortless" / "effortlessly", "innovative", "turnkey", "leverage", "elevate your", "take it to the next level", "in today's fast-paced world", "future-proof" / "future proof", "next-level", "top-tier" / "top tier", "unprecedented", "unmatched", "unrivaled" / "unrivalled", "unbeatable", "trailblazing", "skyrocket" / "skyrockets" / "skyrocketing", "one-of-a-kind" / "one of a kind", "second to none" / "second-to-none", "like never before", "like no other", "world-changing" / "world changing", "bleeding edge" / "bleeding-edge", "powered by ai", "ai-driven" / "ai driven", "unbelievable", "mind-blowing" / "mind blowing", "changes the game" / "change the game" / "changing the game", and the split spellings "seam less", "revo lutionary", "ground breaking". Bare "next level" without a hyphen is not flagged — it is also a game level and a level of detail. | Swap in a concrete capability, or delete the word. |
-| AI tell phrases (`ai-tells`) | Medium | "delve" / "delves" / "delving" / "delved", "tapestry", "furthermore", "moreover", "in conclusion", "embark" / "embarks" / "embarking" / "embarked", "realm", "navigate" / "navigates" / "navigating" / "navigated", "it's important to note" / "it is important to note", "worth noting", "dive into", "in today's digital age", "as an AI language model", "welcome to the future of work", "unlock your potential", "unlock your * potential" (one word in between, such as "full"), "join us on this journey", "showcase" / "showcases" / "showcased" / "showcasing", "underscore" / "underscores" / "underscored" / "underscoring", "intricate" / "intricacies" / "intricacy", "meticulous" / "meticulously", "commendable", "garner" / "garnered" / "garnering", "surpass" / "surpasses" / "surpassing", "boast" / "boasts" / "boasting". The clustered tells — furthermore, moreover, in conclusion, delve, tapestry, navigate, showcase, embark, realm — only count when four or more distinct ones appear in the same draft, because each is ordinary in its home register; the rest fire on their own. | Delete the phrase, or say what actually happened. |
+| Hype vocabulary (`buzzwords`) | Medium | "ai-powered" / "ai powered", "revolutionary", "revolutionize" / "revolutionizing", "next-generation" / "next generation", "cutting-edge" / "cutting edge", "groundbreaking", "unparalleled", "seamless" / "seamlessly", "game-changing" / "game changing" / "game changer" / "game changers", "unleash" / "unleashes" / "unleashed" / "unleashing", "supercharge" / "supercharges" / "supercharged" / "supercharging", "turbocharge" / "turbocharges" / "turbocharged" / "turbocharging", "state-of-the-art" / "state of the art", "best-in-class", "world-class", "industry-leading", "market-leading", "award-winning", "transformative", "disruptive", "synergy" / "synergies", "paradigm shift" / "paradigm shifts", "empower" / "empowers" / "empowered" / "empowering", "effortless" / "effortlessly", "innovative", "turnkey", "leverage" / "leverages" / "leveraged" / "leveraging", "elevate your" / "elevates your" / "elevating your", "take it to the next level", "in today's fast-paced world", "future-proof" / "future proof", "next-level", "top-tier" / "top tier", "unprecedented", "unmatched", "unrivaled" / "unrivalled", "unbeatable", "trailblazing", "skyrocket" / "skyrockets" / "skyrocketed" / "skyrocketing", "one-of-a-kind" / "one of a kind", "second to none" / "second-to-none", "like never before", "like no other", "world-changing" / "world changing", "bleeding edge" / "bleeding-edge", "powered by ai", "ai-driven" / "ai driven", "unbelievable", "mind-blowing" / "mind blowing", "changes the game" / "change the game" / "changing the game", and the split spellings "seam less", "revo lutionary", "ground breaking". Bare "next level" without a hyphen is not flagged — it is also a game level and a level of detail. | Swap in a concrete capability, or delete the word. |
+| AI tell phrases (`ai-tells`) | Medium | "delve" / "delves" / "delving" / "delved", "tapestry" / "tapestries", "furthermore", "moreover", "in conclusion", "embark" / "embarks" / "embarking" / "embarked", "realm", "navigate" / "navigates" / "navigating" / "navigated", "it's important to note" / "it is important to note", "worth noting", "dive into", "in today's digital age", "as an AI language model", "welcome to the future of work", "unlock your potential", "unlock your * potential" (one to three words in between, such as "full" or "full true"), "join us on this journey", "showcase" / "showcases" / "showcased" / "showcasing", "underscore" / "underscores" / "underscored" / "underscoring", "intricate" / "intricacies" / "intricacy" / "intricately", "meticulous" / "meticulously", "commendable", "garner" / "garners" / "garnered" / "garnering", "surpass" / "surpasses" / "surpassed" / "surpassing", "boast" / "boasts" / "boasted" / "boasting". The clustered tells — furthermore, moreover, in conclusion, delve, tapestry, navigate, showcase, embark, realm — only count when four or more distinct ones appear in the same draft, because each is ordinary in its home register; the rest fire on their own. A `*` in a phrase matches one to three words, so a modifier inserted into a listed phrase ("unlock your full true potential") no longer breaks detection; a four-word gap does not match. | Delete the phrase, or say what actually happened. |
 | AI adjectives (`ai-adjectives`) | Low | "crucial", "pivotal", "foster" / "fosters" / "fostered" / "fostering", "robust", "landscape", "quintessential", "exemplary", "unwavering", "steadfast", "paramount". They only count when three or more distinct ones appear in the same draft, because each is ordinary in its home discipline. | Name the specific quality, or delete the word. |
-| Style words in a cluster (`style-words`) | Low | Formal style words that are ordinary on their own — "aligns", "emphasizing" / "emphasising", "advancements", "pioneering", "notably" / "notable", "additionally", "consequently", "ultimately", "undoubtedly", "remarkably", "exceptional", "extraordinary", "profound" / "profoundly", "holistic", "invaluable", "indispensable", "comprehensive", "spearheaded" / "spearheading", "championed", "orchestrated", "cultivated". They only count when three or more distinct ones appear in the same draft — the clustering, not the word, is the signal. A single term, however often repeated, never fires on its own. | Use the plain word, or say what actually happened. |
+| Style words in a cluster (`style-words`) | Low | Formal style words that are ordinary on their own — "align" / "aligns" / "aligned" / "aligning", "emphasize" / "emphasise" / "emphasizes" / "emphasises" / "emphasized" / "emphasised" / "emphasizing" / "emphasising", "advancement" / "advancements", "pioneer" / "pioneers" / "pioneered" / "pioneering", "notably" / "notable", "additionally", "consequently", "ultimately", "undoubtedly", "remarkably", "exceptional", "extraordinary", "profound" / "profoundly", "holistic", "invaluable", "indispensable", "comprehensive", "spearhead" / "spearheads" / "spearheaded" / "spearheading", "champion" / "champions" / "championed" / "championing", "orchestrate" / "orchestrates" / "orchestrated" / "orchestrating", "cultivate" / "cultivates" / "cultivated" / "cultivating". They only count when three or more distinct ones appear in the same draft — the clustering, not the word, is the signal. Distinct means distinct lemmas: "align", "aligned", and "aligning" are one term, not three, so one stem in three forms cannot satisfy the cluster on its own. A single term, however often repeated, never fires on its own. | Use the plain word, or say what actually happened. |
 | Template opener (`overused-opener`) | Low | "in today's world", "in today's fast-paced world", "in today's online world", "in a world where", "imagine a world", "ever wondered", "we've all been there", "let's face it", "here's the thing", "in an era of", "picture this", "imagine this", "in the digital age", "in the modern world", "in our modern world", "in this day and age", "have you ever", "what if i told you", "the truth is", "listen up", "dear reader", "once upon a time", "it is no secret that", "there is no denying that", "needless to say", "in a fast-paced world" / "in a fast paced world", "in this fast-paced world" / "in this fast paced world" | Start with the claim itself. |
 | Template closer (`template-closer`) | Low | "to sum up", "to summarize", "in summary", "in closing", "all in all", "to wrap up", "wrapping up", "in a nutshell", "long story short", "thanks for reading", "stay tuned", "until next time", "that is all", "let me know what you think" | End on the claim itself, or just stop. |
 | Not just X, but Y (`not-just`) | Low | The stock cadence "not just X, but Y", where the twist arrives in the same sentence, however long the clause is — or on the next line, when the setup line ends with a comma. "Yet" counts as a twist too. | State the claim once, directly. |
@@ -102,7 +184,7 @@ Numbers, credentials, and praise that arrive without proof.
 
 | Rule | Severity | What it catches | Fix |
 | --- | --- | --- | --- |
-| Unsourced number (`unsourced-number`) | Medium | A percentage, a number with a `k`, `m`, or `b` suffix, a spelled-out percentage such as "five hundred percent" or "five-hundred percent", a multiplier claim such as "10x faster", or a large round number used as a selling claim (10,000 happy users, ten thousand teams, 10 million readers), with no source nearby. A percentage only counts when it is a claim — a claim noun or a claim verb nearby, such as "grew" or "uptime" — so a plain measurement such as "The battery is at 50%." is left alone. A number in a reporting sentence is data, not a claim: unemployment, revenue, inflation, or prices with a change verb ("Unemployment increased 2%", "Revenue grew 12%") is left alone. A price statement ("100% FREE") is left alone. A bare or spelled number also needs selling context in its sentence — the seller speaking (we / our / us), a selling verb, or a boast adjective next to the number — so "Over a thousand companies across Germany use it every day" is left alone. A number with context — a date, a version, a measurement, "the server handled 10,000 requests" — is left alone | Link the source, or cut the number. |
+| Unsourced number (`unsourced-number`) | Medium | A percentage, a number with a `k`, `m`, or `b` suffix, a spelled-out percentage such as "five hundred percent" or "five-hundred percent", a multiplier claim such as "10x faster", or a large round number used as a selling claim (10,000 happy users, ten thousand teams, 10 million readers), with no source nearby. A percentage only counts when it is a claim — a claim noun or a claim verb nearby, such as "grew" or "uptime" — so a plain measurement such as "The battery is at 50%." is left alone. A number in a reporting sentence is data, not a claim: unemployment, revenue, inflation, or prices with a change verb ("Unemployment increased 2%", "Revenue grew 12%") is left alone. A price statement ("100% FREE") is left alone. A bare or spelled number also needs selling context in its sentence — the seller speaking (we / our / us), a selling verb, or a boast adjective next to the number — so "Over a thousand companies across Germany use it every day" is left alone. A number with a `k`, `m`, or `b` suffix needs hype context too — the seller speaking, or a claim verb in the sentence — so "Revenue was $4.2b", "The study enrolled 10m participants", and "The fund manages $10m in assets" are left alone, while "We serve 10m users" and "We grew to 10m users" still count. A claim noun on its own is not hype context: "The report lists 10m users" is data, not a boast. A number with context — a date, a version, a measurement, "the server handled 10,000 requests" — is left alone | Link the source, or cut the number. |
 | Unverified trust claim (`trust-claim`) | High | "SOC 2", "ISO 27001", "GDPR-compliant", "HIPAA-compliant", "enterprise-grade security", "bank-level encryption", "military-grade encryption", "100% secure", "100% uptime", "99.x% uptime" | Link the audit, or remove the claim. |
 | Unattributed social proof (`social-proof`) | Medium | "trusted by", "loved by", "used by", "join thousands", "join millions", "join over", "join 10,000", "join the thousands", "loved by millions", "trusted by millions", "used by millions", "join the millions", "loved by thousands", "trusted by thousands" | Name real customers, or delete the line. |
 | Testimonial cliche (`testimonial-cliche`) | Medium | "changed my life", "life-changing", "10x our", "best decision we've made", "best decision i've made", "can't imagine", "blown away", "a must-have", "game changer for me", "changed the game", "could not be happier", "couldn't be happier", "highly recommend", "worth every penny", "best purchase ever", "i wish i had found this sooner", "total game-changer" | Quote a named customer with a source, or cut the section. |
@@ -170,8 +252,8 @@ draft does not exempt the rest of it.
 
 | Rule | Severity | What it catches | Fix |
 | --- | --- | --- | --- |
-| Flat sentence rhythm (`burstiness`) | Low | Sentence after sentence landing at almost the same length. Burstiness is the population standard deviation of sentence lengths divided by the mean. It fires below 0.12, with at least 8 sentences, at least 80 words, and a mean sentence length under 16 words. The penalty scales with how far the value sits below the threshold, up to 2.5 times the low weight. | Vary the lengths: shorten one sentence, lengthen another. |
-| Narrow vocabulary range (`low-ttr`) | Low | The text keeps reaching for the same words. Type-token ratio is unique words divided by total words. It fires below 0.45 under 200 words, below 0.40 under 500 words, and below 0.35 above 500 words. The penalty scales with how far the ratio sits below the band, up to 2.5 times the low weight. It does not fire under 80 words. | Use the specific word for each thing instead of the same few words. |
+| Flat sentence rhythm (`burstiness`) | Low | Sentence after sentence landing at almost the same length. Burstiness is the population standard deviation of sentence lengths divided by the mean. It fires below 0.12, with at least 10 sentences, at least 80 words, and a mean sentence length under 26 words. The penalty scales with how far the value sits below the threshold, up to 2.5 times the low weight. | Vary the lengths: shorten one sentence, lengthen another. |
+| Narrow vocabulary range (`low-ttr`) | Low | The text keeps reaching for the same words. Moving-average type-token ratio is the mean type-token ratio over every consecutive 100-word window, stepping one word at a time. It fires below 0.60. The penalty scales with how far the ratio sits below the threshold, up to 2.5 times the low weight. It does not fire under 80 words. | Use the specific word for each thing instead of the same few words. |
 | Repeated word pairs (`repeated-bigrams`) | Low | The same two-word pair, with a content word in it, three or more times in a draft of at least 80 words. Pairs of pure stopwords, such as "of the", do not count. | Vary the phrasing, or cut the repetition. |
 | Transition stacking (`transition-stacking`) | Low | At least half of a piece's paragraphs open with a formal transition word: furthermore, moreover, additionally, ultimately, consequently, therefore, however, meanwhile, nevertheless, nonetheless, firstly, secondly, thirdly, finally, overall, in conclusion, in summary, in addition. Needs at least three paragraphs. | Open paragraphs with the point, not the join. |
 
@@ -196,18 +278,41 @@ of the same sizes.
 - Burstiness (population standard deviation of sentence lengths
   divided by the mean): clean human text in the corpus measures
   0.17–0.35; a ten-sentence run of same-length sentences measures
-  0.08. The threshold is 0.12. The published range often quoted for
-  this measure (human 0.6–1.2, machine 0.2–0.4) does not transfer to
-  short drafts, so it was not used. Burstiness is fragile: a draft
-  with two long sentences and the rest short can measure high while
-  still being repetitive, so the threshold is deliberately low and
-  the rule is a supporting signal only.
-- Type-token ratio (unique words divided by total words): clean texts
-  in the corpus measure 0.65–0.71 at 85–167 words; a 150-word text
-  that repeats the same words measures 0.08. The bands are 0.45 under
-  200 words, 0.40 under 500, and 0.35 above 500, with an 80-word
-  minimum. The ratio falls with length in all writing, which is why
-  the bands are length-adjusted.
+  0.08. The threshold is 0.12, with at least 10 sentences, at least
+  80 words, and a mean sentence under 26 words. The mean cap was 16
+  until Stage 4, which missed the uniform 18–24-word cadence
+  entirely (a ten-sentence run at mean 19.7 with CV 0.099 now
+  fires); the minimum run rose from 8 to 10 with it, because eight
+  sentences at mean 17.8 with near-zero variance also occur in clean
+  filler (STRESS3 C22, eight PAD sentences, CV 0.024, pinned clean).
+  A nine-sentence uniform run at mean 20 still escapes — the
+  documented cost of keeping C22 clean. The published range often
+  quoted for this measure (human 0.6–1.2, machine 0.2–0.4) does not
+  transfer to short drafts, so it was not used. Burstiness is
+  fragile: a draft with two long sentences and the rest short can
+  measure high while still being repetitive, so the threshold is
+  deliberately low and the rule is a supporting signal only.
+- Moving-average type-token ratio (MATTR, 100-word windows): the
+  mean type-token ratio over every consecutive 100-word window,
+  stepping one word at a time. Raw TTR falls as any text gets
+  longer, which forced the old step-function bands (0.45 under 200
+  words, 0.40 under 500, 0.35 above) and their cliffs at 200/500
+  words. MATTR is length-invariant by construction — each window is
+  the same size — so repeating varied text does not narrow it: the
+  PAD filler measures 0.759 whether it appears once (188 words) or
+  twelve times (2,245 words, 0.758), while its raw TTR collapses
+  from 0.708 to 0.059. The threshold is 0.60, calibrated on the corpus in
+  `src/lib/stage4.test.ts`: clean text measures 0.65–0.86 (binding
+  case the academic abstract at 0.685; the legal paragraph at 0.647
+  is formal-stripped before measuring, so it never reaches the rule)
+  and the repetitive probes 0.12–0.53 (binding case the repeated
+  example draft at 0.530). The threshold sits in the gap, nearer the
+  clean side, because this is a supporting signal and a false
+  positive costs more than a missed repetition. The 80-word minimum
+  stands, and the penalty still scales with depth, up to 2.5 times
+  the low weight. Global repetition that MATTR no longer sees — the
+  same twelve varied sentences repeated — is still caught by
+  repeated-bigrams.
 - Em dash: published human writing runs about 3.7–10 pause-dashes per
   1,000 words (a Twain-style passage in the corpus measures about
   10 per 1,000 and scores 100). The rule fires above 20 per 1,000,
@@ -228,7 +333,7 @@ of the same sizes.
   realm, showcases, showcasing, surpasses, surpassing, underscore(s),
   underscoring. The buzzword list adds corporate verb inflation
   (revolutionize, turbocharge, future-proof, top-tier, skyrocket)
-  with a clean/slop test for each term. The vocabulary union is 165
+  with a clean/slop test for each term. The vocabulary union is 215
   distinct terms; the cliche union is 129 distinct phrases. Every
   term and phrase has a test that checks it fires on a slop frame and
   stays silent on a clean one.
@@ -245,14 +350,18 @@ of the same sizes.
   the lists ("world-changing", "bleeding edge", "powered by AI",
   "AI-driven", "unbelievable", "mind-blowing", "changes the game",
   "in a fast-paced world", "world's best", "best thing ever",
-  "five-hundred percent", "10x faster"), and some are caught by the
-  shape rules instead — burstiness, type-token ratio, and substance
-  do not care which words a draft uses. The rest cannot be caught by
-  a pattern checker and pass clean: a bare sentiment with no listed
-  word ("I love this product so much"), a "not just X" twist split
-  across two sentences with no comma, and a generic call to action
-  that names no action ("Click here", "Learn more", "Start now" with
-  no object). Those are documented here, not claimed as fixed.
+  "five-hundred percent", "10x faster", "unlock your full true
+  potential", "tapestries", "unleashed", "skyrocketed"), and some
+  are caught by the shape rules instead — burstiness, MATTR, and
+  substance do not care which words a draft uses. The rest cannot be
+  caught by a pattern checker and pass clean: a bare sentiment with
+  no listed word ("I love this product so much") and a "not just X"
+  twist split across two sentences with no comma. Those are
+  documented here, not claimed as fixed. (An earlier version of this
+  paragraph also listed standalone generic calls to action — "Click
+  here", "Learn more", "Start now" with no object — as passing
+  clean. That was stale: they fire, unless they point at the
+  documentation or sit on a heading line.)
 - Splitting a listed phrase, or swapping a character for a lookalike,
   no longer hides it: the draft is normalised before scanning. Dropping
   the part the pattern needs, such as the `%` sign on a number, still
@@ -279,13 +388,18 @@ of the same sizes.
   strict one. The rest of the thresholds are still hard cliffs by
   design: a draft one unit under a threshold passes, and one unit
   over it does not.
-- Density has a floor: a draft under 50 words is scored as if it were
-  50 words, so a one-word draft that contains a listed word ("seamless")
-  scores 76. That is the floor working as designed, not a bug — but it
+- Density has an adaptive floor: a draft under 23 words is scored as
+  if it were more words than it has — min(50, max(12, round(words *
+  2.2))) — so a one-word draft that contains a listed word ("seamless")
+  scores 48. That is the floor working as designed, not a bug — but it
   means a single word on its own is never clean if the word is listed.
+  Below 23 words the floor still grows with the draft, so adding words
+  to a very short draft can raise its score a little even when nothing
+  is cleared; the floor caps at 50, so the effect ends at 23 words.
 - The diversity signals are supporting signals, not verdicts. Burstiness
-  is fragile on short drafts, the type-token ratio falls with length in
-  all writing, and a repeated bigram can be a legitimate refrain. They
+  is fragile on short drafts, MATTR can stay high when varied
+  sentences repeat (that repetition is the repeated-bigram rule's
+  job), and a repeated bigram can be a legitimate refrain. They
   are calibrated to fire on repetition, but a single one firing on its
   own moves a score by a few points at most. Convergence is the signal:
   several diversity findings together with vocabulary or substance
@@ -303,9 +417,17 @@ of the same sizes.
 - The score is density-aware, but it is still penalty only. A draft
   that repeats one pattern many times is scored worse than one that
   says it twice, and a single hit in a short draft costs more than
-  the same hit in a long one. Adding clean words dilutes the penalty,
-  so a fake-citation variant of a flagged text can score a few points
-  higher than the original without any flag being cleared.
+  the same hit in a long one. Adding clean words still softens the
+  global term, but the peak 100-word window holds the worst passage:
+  a 49-word sloppy hero scores 9 alone and 33 with 1,000 clean words
+  appended (penalty 133.53 to 61.27), where the old global-only
+  scoring let it rise to 79. A fake-citation variant of a flagged text
+  can still score higher than the original — the literal HEAD-TO-HEAD
+  pair moves 31 to 40 — but not through dilution: the adaptive floor
+  grows from 44 to 50 across that pair, and the pre-existing citation
+  logic clears one unsourced-number hit (the rule still fires, with
+  two hits instead of three). At or above the 23-word floor cap, with
+  the same hits, added words alone change nothing.
 - False positives are normal. The common ones are handled — "Explore
   the codebase", a compliance claim that links its audit, known
   acronyms such as NASA — but a single emphasised word can still be
