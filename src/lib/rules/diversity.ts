@@ -14,24 +14,26 @@ import {
 } from './common'
 
 // Burstiness: the standard deviation of sentence lengths divided by
-// the mean. The published GPTZero range (human 0.6–1.2, model
-// 0.2–0.4) does not transfer to short drafts: on the P2 calibration
-// corpus, clean human text of 80–200 words measures 0.17–0.35 — an
-// academic abstract 0.23, a contract 0.17, API documentation 0.35, a
-// varied 167-word news paragraph 0.34 — while a run of ten
-// near-identical short sentences measures 0.08. The threshold below
-// is calibrated from that corpus, not copied: under 0.12, with at
-// least 10 sentences, at least 80 words, and a mean sentence under
-// 26 words. Stage 4 widened the mean cap from 16 to 26: the old cap
-// missed the uniform 18–24-word GPT-4o/Claude cadence entirely, and
-// a ten-sentence run at that length with almost no variance is the
-// same flat rhythm, just longer sentences. The minimum run rose
-// from 8 to 10 with it: eight sentences at mean 18 with near-zero
-// variance also occur in clean filler (STRESS3 C22, eight PAD
-// sentences at mean 17.8, CV 0.024, pinned clean), so a long-sentence
-// run has to be sustained — ten sentences — before it counts. A
-// nine-sentence uniform run at mean 20 still escapes; that is the
-// documented cost of keeping C22 clean.
+// the mean. No published range was used: the ranges detector guides
+// quote disagree with each other, and the largest direct measurement
+// puts human academic writing at a mean CV of 0.449 (AI rewrites
+// 0.376) across 60,779 paired texts (TextPulse Research 2026). On
+// the P2 calibration corpus, clean human text of 80–200 words
+// measures 0.17–0.35 — an academic abstract 0.23, a contract 0.17,
+// API documentation 0.35, a varied 167-word news paragraph 0.34 —
+// while a run of ten near-identical short sentences measures 0.08.
+// The threshold below is calibrated from that corpus, not copied:
+// under 0.12, with at least 10 sentences, at least 80 words, and a
+// mean sentence under 26 words. Stage 4 widened the mean cap from 16
+// to 26: the old cap missed the uniform 18–24-word GPT-4o/Claude
+// cadence entirely, and a ten-sentence run at that length with
+// almost no variance is the same flat rhythm, just longer sentences.
+// The minimum run rose from 8 to 10 with it: eight sentences at mean
+// 18 with near-zero variance also occur in clean filler (STRESS3 C22,
+// eight PAD sentences at mean 17.8, CV 0.024, pinned clean), so a
+// long-sentence run has to be sustained — ten sentences — before it
+// counts. A nine-sentence uniform run at mean 20 still escapes; that
+// is the documented cost of keeping C22 clean.
 export const BURSTINESS_THRESHOLD = 0.12
 
 export const BURSTINESS_MIN_SENTENCES = 10

@@ -109,9 +109,10 @@ const emDashPauses = (text: string): RawMatch[] => {
 // least 3 of them. The threshold is calibrated on the P2 corpus — a
 // Twain-style passage at 10 per 1,000 stays clean, a draft that puts
 // a dash in nearly every sentence measures 60+ — and the published
-// human range (3.7–10 per 1,000 in the SlopDetector em-dash study;
-// GPT-4.1 at 10.62) sits well below it. Severity is medium: a dash
-// is a keystroke, not a thought.
+// human range (0.33–17.12 per 1,000, mean 3.23, eight published
+// essays; Freeburg 2026, "The Last Fingerprint"; GPT-4.1 at 10.62)
+// sits below it. Severity is medium: a dash is a keystroke, not a
+// thought.
 export const EM_DASH_DENSITY_THRESHOLD = 20
 
 export const EM_DASH_MIN_COUNT = 3
