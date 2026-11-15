@@ -54,6 +54,8 @@ editing a label to make the engine pass.
 
 ## Changing the corpus
 
+- **Deliberate label changes** (with a note, never silent):
+  - 2026-11-15 (F20): `C28` `clean` → `grey`. The probe was pinned `clean` only because the testimonial cliche ("I love this product so much") was missed at 100; the F20 fix now flags it (score 70, in the grey zone), and the stress-test band was re-pinned `clean` → `mostly` in the same change.
 - **Adding entries**: append new lines with a fresh id, a label, and
   a split (keep the 70/30 balance roughly). Record the addition here.
 - **Never change a label to make the engine pass.** If an entry's

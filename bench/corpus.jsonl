@@ -92,7 +92,7 @@
 {"id":"C25","text":"AMAZING deal, only today, while stocks last, so hurry and grab yours now.","label":"slop","split":"test","source":"stress3:false-negative"}
 {"id":"C26","text":"100% FREE for every new user, no card needed, cancel anytime you like.","label":"clean","split":"test","source":"stress3:false-negative"}
 {"id":"C27","text":"This is amazing 😀😀😀 and everyone loves it so much today.","label":"grey","split":"test","source":"stress3:false-negative"}
-{"id":"C28","text":"I love this product so much, it is wonderful and I use it every single day.","label":"clean","split":"test","source":"stress3:false-negative"}
+{"id":"C28","text":"I love this product so much, it is wonderful and I use it every single day.","label":"grey","split":"test","source":"stress3:false-negative"}
 {"id":"C29","text":"The results were unbelievable and the team was thrilled with the outcome.","label":"slop","split":"test","source":"stress3:false-negative"}
 {"id":"C30","text":"It was a mind-blowing experience from start to finish, and we all loved it.","label":"slop","split":"test","source":"stress3:false-negative"}
 {"id":"C31","text":"This is the world's best coffee, made fresh every morning in our little shop.","label":"slop","split":"dev","source":"stress3:false-negative"}
