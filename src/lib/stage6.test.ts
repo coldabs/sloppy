@@ -141,7 +141,7 @@ describe('stage6: SARIF output', () => {
     })
   })
 
-  it('includes site rules and location-less site results for a website scan', () => {
+  it('includes site rules and page-URL locations on site results for a website scan', () => {
     const html = `<!doctype html><html><head><title>Probe</title></head><body>
       <h1>Probe</h1>
       <p>${exampleDraft}</p>
@@ -160,7 +160,17 @@ describe('stage6: SARIF output', () => {
     const deadLink = siteResults.find((result) => result.ruleId === 'site/dead-link')
     expect(deadLink).toBeDefined()
     expect(deadLink?.message.text).toContain('2 occurrences')
-    expect(deadLink?.locations).toBeUndefined()
+    // F13: structure/style findings carry the page URL as their
+    // location, so GitHub Code Scanning shows them instead of
+    // silently dropping them.
+    for (const result of siteResults) {
+      expect(result.locations?.[0].physicalLocation.artifactLocation.uri).toBe(
+        'https://example.com/',
+      )
+      expect(
+        result.locations?.[0].physicalLocation.region,
+      ).toBeUndefined()
+    }
     // Copy findings carry locations in the page text.
     const copyResults = run.results.filter(
       (result) => !result.ruleId.startsWith('site/'),

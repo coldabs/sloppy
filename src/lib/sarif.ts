@@ -180,8 +180,9 @@ export const copyToSarif = (
 
 // SARIF for a website scan. Copy findings carry locations in the
 // page text; structure and style findings have no offsets, so they
-// carry the rule, the severity, and the occurrence count in the
-// message instead of a location.
+// carry the page URL as their location (F13) — without one, GitHub
+// Code Scanning silently drops them from display — and the rule,
+// the severity, and the occurrence count in the message.
 export const siteToSarif = (
   site: SiteAnalysis,
   toolVersion: string,
@@ -199,6 +200,13 @@ export const siteToSarif = (
           `${group.hits[0]?.excerpt ?? ''} ` +
           `(${group.occurrences} ${group.occurrences === 1 ? 'occurrence' : 'occurrences'}).`,
       },
+      locations: [
+        {
+          physicalLocation: {
+            artifactLocation: { uri: site.url },
+          },
+        },
+      ],
     })
   }
   return buildSarif(
