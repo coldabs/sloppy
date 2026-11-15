@@ -3,11 +3,25 @@
 // dist/cli/sloppy-lib.mjs, which bin/sloppy.mjs imports. Uses the
 // Vite already in devDependencies — no new tooling — and runs as
 // part of `npm run build`.
+import { readFileSync } from 'node:fs'
 import { build } from 'vite'
+
+// The version is injected from package.json at build time (F6), so
+// the bundle carries the same version the package declares and
+// there is no second hardcoded copy to drift. bin/sloppy.mjs still
+// reads package.json at runtime and passes the version in — that
+// wins when present; the injected value is the fallback for a
+// bundle run without it.
+const pkgVersion = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf-8'),
+).version
 
 await build({
   configFile: false,
   logLevel: 'info',
+  define: {
+    __SLOPPY_VERSION__: JSON.stringify(pkgVersion),
+  },
   // No public dir: this is a node bundle, not the web app, so the
   // app's public/ files must not be copied into dist/cli.
   publicDir: false,
