@@ -22,55 +22,11 @@ export class FetchError extends Error {
   }
 }
 
-export const isPrivateAddress = (address) => {
-  const value = address.trim().toLowerCase().replace(/^\[|\]$/g, '')
-  const version = isIP(value)
-
-  if (version === 4) {
-    const octets = value.split('.').map(Number)
-    const [a, b, c] = octets
-    if (a === 0 || a === 10 || a === 127) return true
-    if (a === 100 && b >= 64 && b <= 127) return true
-    if (a === 169 && b === 254) return true
-    if (a === 172 && b >= 16 && b <= 31) return true
-    if (a === 192 && b === 168) return true
-    if (a === 192 && b === 0) return true
-    // RFC 5737 documentation ranges are /24s, not /16s: only
-    // 198.51.100.0/24 (TEST-NET-2) and 203.0.113.0/24 (TEST-NET-3) are
-    // reserved. The rest of 198.51.0.0/16 and 203.0.0.0/16 is public.
-    // 198.18.0.0/15 stays blocked (benchmarking, RFC 2544).
-    if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return true
-    if (a === 203 && b === 0 && c === 113) return true
-    if (a >= 224) return true
-    return false
-  }
-
-  if (version === 6) {
-    if (value === '::' || value === '::1') return true
-    if (value.startsWith('::ffff:')) {
-      return isPrivateAddress(value.slice('::ffff:'.length))
-    }
-    // Unique Local fc00::/7: the first group must be a full four hex
-    // digits, fc00-fdff. A bare prefix test would also block short
-    // groups such as fc::1 or fd::1, which are outside the range.
-    if (/^f[cd][0-9a-f]{2}:/i.test(value)) return true
-    // Link-local fe80::/10: first group fe80-febf.
-    if (/^fe[89ab][0-9a-f]:/i.test(value)) return true
-    if (value.startsWith('ff')) return true
-    // Documentation 2001:db8::/32 (second group exactly 0db8).
-    if (/^2001:0*db8:/i.test(value)) return true
-    // NAT64 64:ff9b::/96 can encapsulate private IPv4 addresses.
-    if (/^64:ff9b:/i.test(value)) return true
-    // Teredo 2001::/32: second group all zeros, in any spelling
-    // (2001:0:, 2001:0000:, or compressed 2001::).
-    if (/^2001:0{0,4}:/i.test(value)) return true
-    // 6to4 2002::/16 can encapsulate private IPv4 addresses.
-    if (/^2002:/i.test(value)) return true
-    return false
-  }
-
-  return true
-}
+// The SSRF guard lives in src/lib/ipGuard.mjs now — one shared
+// implementation for the server and the browser pre-check (F9).
+// Re-exported here so existing imports keep working.
+import { isPrivateAddress } from '../src/lib/ipGuard.mjs'
+export { isPrivateAddress }
 
 const normaliseInput = (input) => {
   const trimmed = input.trim()
