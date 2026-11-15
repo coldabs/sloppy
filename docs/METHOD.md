@@ -367,7 +367,7 @@ of the same sizes.
   focal words. The buzzword list adds corporate verb inflation
   (revolutionize, turbocharge, future-proof, top-tier, skyrocket)
   with a clean/slop test for each term. The vocabulary union is 215
-  distinct terms; the cliche union is 129 distinct phrases. Every
+  distinct terms; the cliche union is 131 distinct phrases. Every
   term and phrase has a test that checks it fires on a slop frame and
   stays silent on a clean one.
 - Only English is checked in P2. The em dash and number rules still
