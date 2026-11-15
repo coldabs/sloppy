@@ -1,8 +1,11 @@
 {
-  "name": "sloppy",
+  "name": "@coldabs/sloppy",
   "version": "0.2.0",
   "license": "Apache-2.0",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=24"
   },
