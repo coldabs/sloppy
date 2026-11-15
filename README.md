@@ -154,9 +154,9 @@ sloppy --threshold 90 draft.txt               # fail unless the score is 90+
 `sloppy` is the `bin` entry in `package.json`, so from the repo root
 `npx sloppy …` runs it (npm does not symlink a package's own bin into
 `node_modules/.bin`, but npx resolves it from `package.json`). The package is
-no longer `private`, so it can be published to npm — `npm install sloppy`
-works once it is published (the release process is still to be decided).
-Until then, install it from a clone: `npm install`, then `npm run build`.
+`@coldabs/sloppy`, so it installs with `npm install @coldabs/sloppy` once it
+is published (S2). Until then, install it from a clone: `npm install`, then
+`npm run build`.
 
 ### Configuration
 
