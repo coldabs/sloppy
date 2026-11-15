@@ -464,8 +464,14 @@ export const unsourcedNumbers = (text: string): RawMatch[] => {
     if (hasCitationNear(urls, text, start, end, spans)) continue
     matches.push({ start, end })
   }
-  matches.push(...bareClaimNumbers(text, urls, spSpans, spans))
-  matches.push(...spelledClaimNumbers(text, urls, spSpans, spans))
+  // Pushed one at a time, not spread: a very long draft can return
+  // more matches than a spread call can take (F5).
+  for (const match of bareClaimNumbers(text, urls, spSpans, spans)) {
+    matches.push(match)
+  }
+  for (const match of spelledClaimNumbers(text, urls, spSpans, spans)) {
+    matches.push(match)
+  }
   return matches.sort((a, b) => a.start - b.start)
 }
 

@@ -196,9 +196,20 @@ export const sentenceSpans = (text: string): SentenceSpan[] => {
   return spans
 }
 
+// Spans are sorted by start and non-overlapping, so the sentence
+// containing a position is a binary search, not a scan: a linear
+// scan here was quadratic on long drafts (F5 — repeatedBigrams
+// calls this once per token, so 170k sentences x 1.5M tokens
+// never finished). A position past the last span belongs to the
+// last sentence, as before.
 export const sentenceIndexAt = (spans: SentenceSpan[], position: number): number => {
-  for (let i = 0; i < spans.length; i += 1) {
-    if (position >= spans[i].start && position < spans[i].end) return i
+  let lo = 0
+  let hi = spans.length - 1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    if (position < spans[mid].start) hi = mid - 1
+    else if (position >= spans[mid].end) lo = mid + 1
+    else return mid
   }
   return spans.length - 1
 }
