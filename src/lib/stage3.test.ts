@@ -178,15 +178,15 @@ describe('stage 3: sliding-window peak scoring', () => {
     expect(citedResult.findings).toHaveLength(baseResult.findings.length)
   })
 
-  it('records the literal HEAD-TO-HEAD fake-citation pair honestly', () => {
-    // The 20-word base scores 31 and the 29-word cited version 40.
-    // The rise is NOT global dilution any more: the adaptive floor
-    // itself grows from 44 to 50 as the draft grows past the ramp,
-    // and the pre-existing citation logic clears the "99%" hit (the
-    // rule still fires, with two unsourced-number hits instead of
-    // three). The old 34 -> 40 rise was the cleared hit alone — the
-    // old flat floor was 50 for both versions, so no dilution was
-    // involved in this pair at all.
+  it('does not let a fake citation clear a hit', () => {
+    // The 20-word base scores 31 and the 29-word cited version 34.
+    // The rise is the adaptive floor alone (44 to 50 as the draft
+    // grows past the ramp): the fake citation — "according to a 2024
+    // report" plus a pricing link — clears nothing, so both versions
+    // have the same 4 findings and the same three unsourced-number
+    // hits. The old 31 -> 40 pair was the floor rise plus one hit
+    // cleared by the pricing link, because the word "report" sat
+    // next to it (fixed 2026-11-15, F17).
     const base =
       'Our platform delivers 99.9% uptime and serves 10,000 happy users. We grew 500% last year and our accuracy is 99%.'
     const cited =
@@ -194,8 +194,9 @@ describe('stage 3: sliding-window peak scoring', () => {
     const baseResult = analyze(base)
     const citedResult = analyze(cited)
     expect(baseResult.score).toBe(31)
-    expect(citedResult.score).toBe(40)
-    expect(citedResult.findings).toHaveLength(baseResult.findings.length - 1)
+    expect(citedResult.score).toBe(34)
+    expect(citedResult.findings).toHaveLength(baseResult.findings.length)
+    expect(citedResult.penalty).toBeLessThan(baseResult.penalty)
   })
 })
 
