@@ -184,3 +184,17 @@ The council voted on Tuesday to repair the bridge over the Miller River, a proje
 ## Verdict (filled 2026-11-14)
 
 Sloppy P2 wins the head-to-head. On fake claims it is decisive: fake-number sloppy 34 (Heavy slop) vs SlopDetector 5; fake-number plus a fake citation sloppy 40 vs SlopDetector 0 — the fake citation cleared SlopDetector completely. On obvious slop it is stronger: example-draft sloppy 9 vs SlopDetector 30, vocab-slop 18 vs 32, thin-substance 40 vs 29, repetitive-same-words 39 vs 23. On clean texts both agree they are clean (sloppy 100, SlopDetector 0-14), with SlopDetector slightly noisier on literary/academic/legal (8-14). SlopDetector never called any probe more than LOW SLOP.
+
+## Addendum — 2026-11-14, Stage 3 scoring
+
+The table above is the P2 record and is left as written. Re-running all
+21 probes after Stage 3 (windowed peak scoring, adaptive floor,
+co-occurrence multiplier): 18 probes score exactly as before. Three
+moved, all lower (harsher): fake-number 34 → 31, fake-authority 54 → 47,
+repetitive-same-words-150w 39 → 38. No clean probe moved. The
+fake-citation pair now reads 31 → 40; the rise is the adaptive floor
+growing from 44 to 50 across the pair plus one unsourced-number hit
+cleared by the existing citation logic — the caveat above that the rise
+came "solely because the extra words inflated effectiveWords" was wrong
+for this pair: the old flat floor was 50 for both versions, so the old
+34 → 40 rise was the cleared hit alone.

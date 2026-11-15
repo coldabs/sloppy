@@ -13,6 +13,7 @@ same score, and every score can be explained.
 - [Why this exists](#why-this-exists)
 - [Two modes](#two-modes)
 - [Run it](#run-it)
+- [Command line](#command-line)
 - [How the score works](#how-the-score-works)
 - [Website fetch guards](#website-fetch-guards)
 - [Demo site](#demo-site)
@@ -95,7 +96,8 @@ rather than running beside a stale app with no fetch API.
 Other scripts:
 
 ```sh
-npm run build      # typecheck and production build
+npm run build      # typecheck, production build, and the CLI bundle
+npm run build:cli  # the CLI bundle only (dist/cli/sloppy-lib.mjs)
 npm start          # serve the build and API on port 4173
 npm test           # Vitest: copy rules, site rules, URL guards
 npm run lint       # Oxlint
@@ -105,6 +107,78 @@ npm run typecheck  # TypeScript only
 `npm run dev` and `npm start` both run `server.mjs`: Vite middleware in dev, a
 static server plus API in production. `npm run preview` is an alias for
 `npm start`.
+
+## Command line
+
+The same checker runs from a terminal, for scripts and CI. It needs a
+build first, because the analyser is TypeScript and the CLI imports the
+bundle that build produces:
+
+```sh
+npm install
+npm run build
+```
+
+Then:
+
+```sh
+sloppy draft.txt                              # scan a file, JSON on stdout
+cat draft.txt | sloppy                        # or read stdin
+sloppy --url https://example.com              # scan a website
+sloppy --url https://example.com --sarif      # GitHub Code Scanning SARIF
+sloppy --threshold 90 draft.txt               # fail unless the score is 90+
+```
+
+`sloppy` is the `bin` entry in `package.json`, so from the repo root
+`npx sloppy …` runs it (npm does not symlink a package's own bin into
+`node_modules/.bin`, but npx resolves it from `package.json`). The package stays
+`private`: the command is for local use and CI, not for publishing.
+
+### Output
+
+JSON is the default. A copy scan reports the score, verdict, counts, and
+every finding with its offsets and excerpt; a website scan adds the page
+facts, the structure and style groups with occurrence counts, and the
+copy findings. `--format sarif` (or `--sarif`) reports the same scan as
+SARIF 2.1.0 instead: one result per finding, with the rule list in the
+tool driver, `high` as `error`, `medium` as `warning`, `low` as `note`,
+line and column for copy findings, and the score as a property of the
+run. Site findings have no offsets, so they carry the occurrence count
+in the message instead of a location.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | The score met the threshold (default 70) |
+| 1 | The score fell below the threshold — slop found at this gate |
+| 2 | Usage error, unreadable input, or a failed page fetch |
+
+The threshold is the gate: `--threshold 90` passes a draft scoring 90
+and fails one scoring 89. A score exactly at the threshold passes.
+
+### CI gating
+
+```yaml
+- uses: actions/checkout@v4
+- uses: actions/setup-node@v4
+  with:
+    node-version: 24
+- run: npm ci
+- run: npm run build
+- name: Gate landing-page copy
+  run: npx sloppy --threshold 70 --sarif copy/landing.txt > sloppy.sarif
+- name: Upload SARIF
+  if: always()
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: sloppy.sarif
+```
+
+The website scan fetches the page (and up to five linked stylesheets)
+from the machine running the command, the same static fetch the
+Website panel does. It cannot see JavaScript-rendered content or pages
+behind a login, and it sends the URL nowhere else.
 
 ### Deploying
 
@@ -148,7 +222,12 @@ functions automatically and does not offer the public proxy.
    limit. A phrase matched by two rules counts once, at the higher
    severity.
 2. One hit in a short draft costs far more than the same hit in a long one.
-   Drafts under 50 words are scored as if they were 50 words.
+   Short drafts are scored against an adaptive floor: a one-word draft is
+   judged as 12 words, scaling smoothly to 50 words at 23 words. Density is
+   also measured over the worst 100-word sliding window (step 25 words) and
+   blended 0.35 global / 0.65 peak, so a sloppy passage cannot be washed out
+   by clean filler — and a sentence where three or more distinct rule groups
+   fire costs 25% more than the same signals spread out.
 3. The penalty decays on a curve: `score = round(100 * e^(-penalty / 55))`.
 
 Seven rule groups look at the shape of the writing rather than its
@@ -222,6 +301,10 @@ network request.
 ## Project layout
 
 ```
+bin/
+  sloppy.mjs           the `sloppy` command (loads dist/cli/sloppy-lib.mjs)
+scripts/
+  build-cli.mjs        bundles the CLI from src/lib/cliEntry.ts
 server.mjs             dev and production server entry
 server/
   fetch.mjs            fetch guards, redirects, size limits, CSS proxy
@@ -251,6 +334,11 @@ src/
     Footer.tsx         closing statement
   lib/
     analyzer.ts        copy scan loop, density scoring, highlights
+    analysisWorker.ts  Web Worker entry: analyze() off the main thread
+    analysisClient.ts  worker client with main-thread fallback
+    cli.ts             command-line parsing, JSON/SARIF output, exit codes
+    cliEntry.ts        CLI bundle entry (DOM shim for analyzeSite in node)
+    sarif.ts           SARIF 2.1.0 rendering of an analysis
     normalize.ts       lookalike, invisible character, and dash folding
     rules.ts           copy rules, lexicons, weights, group metadata
     siteAnalyzer.ts    site scoring and result assembly
@@ -269,7 +357,9 @@ docs/
 
 Copy mode never leaves the tab. Website mode sends the URL to the app's fetch
 route, either the local server or the deployed function, which fetches the page
-directly. Analysis always runs in the browser. There is no analytics, no account,
+directly. Analysis always runs in the browser — copy and website scans run
+in a Web Worker, so a long draft never blocks the page, with the same
+analyser running on the main thread if Workers are unavailable. There is no analytics, no account,
 and no stored page.
 
 On a static host without the API, live scanning uses a public CORS proxy only

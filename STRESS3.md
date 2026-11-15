@@ -288,3 +288,64 @@ The holes are real but they are the known shape of this tool, not new breakage: 
 - B10's same-length firing was bisected in a scratch check: the five German sentences are 6, 7, 6, 7, 9 words — a genuine 4-in-a-row run within one word, not a splitter artefact. The scratch file was deleted after the check.
 - D06/D16 first measured 100/100 because the PAD filler contained *two* legal-marker sentences; removing both flipped D16 to 45 while D06 stayed 100. That accident is the evidence for F-50.
 - Band key: clean 90–100, mostly 70–89, slop 20–69 (the table uses the verdict bands: 45–69 "Slop creeping in", 20–44 "Heavy slop"), industrial 0–19. Bands were pinned from measured scores after the first pass; the pinned file passes 4/4.
+
+## Addendum — 2026-11-14, Stage 3 scoring (windowed peak + adaptive floor + co-occurrence)
+
+The table and findings above are the P2 record and are left as written.
+Re-running `src/lib/p2-stress3.test.ts` after Stage 3 (AUDIT.md §7 stage 3):
+
+- Clean probes below 90: still **2/36** (B10 89, B20 72 — B20, "Best day
+  ever!!!", fell from 89: a 3-word draft is judged against a 12-word
+  floor now).
+- Slop probes at 100: still **17/43**, the same set — Stage 3 changes
+  density scoring, not rule coverage; the silent probes are rule gaps
+  for Stage 4.
+- Paraphrase probes at 100: still **1/15** (C28).
+- **30 probe bands re-pinned** in the test file to the new measured
+  scores, all in the harsher direction: 17 evasion probes (A01–A06,
+  A08–A11, A13, A15, A17–A19, A22, A23) and 10 slop probes (C02–C05,
+  C29–C31, C33, C38, C39) moved mostly → slop (58–68); D04 ("seamless"
+  alone) moved mostly → slop (48), closing F-52; D08 moved mostly →
+  slop (68); D10 (density saturation) moved slop → industrial (13).
+- Dilution demo (new, `src/lib/stage3.test.ts`): a 49-word sloppy hero
+  scores 9 alone and 33 with ~1,000 clean words appended (penalty
+  133.53 → 61.27, a 54.1% dilution, down from 90.3% / 9 → 79 before
+  Stage 3).
+- Fake-citation pair: 31 → 40 (was 34 → 40). The rise is the adaptive
+  floor growing 44 → 50 plus one unsourced-number hit cleared by the
+  pre-existing citation logic — not global dilution. With the same hits
+  at floor saturation, added words alone change nothing (34 → 34).
+
+## Addendum — 2026-11-14, Stage 4 rules (split + gaps + suffixes + MATTR + number corroboration + burstiness)
+
+The table and findings above are the P2 record and are left as written.
+Re-running `src/lib/p2-stress3.test.ts` after Stage 4 (AUDIT.md §7 stage 4):
+
+- Clean probes below 90: still **2/36** (B10 89, B20 72).
+- Slop probes at 100: still **17/43**, the same set — this stage adds
+  coverage for shapes the STRESS3 set does not contain (bounded
+  1–3-word phrase gaps, inflected forms such as "tapestries" and
+  "unleashed", the uniform 18–24-word cadence, suffixed figures
+  without hype context), proven by the 47 new tests in
+  `src/lib/stage4.test.ts`; it does not move any probe already in the
+  table. The silent probes are threshold-boundary and exemption
+  shapes (C12, C14–C18, C24–C28, C34–C37, C41, C42), not gap/suffix
+  shapes.
+- Paraphrase probes at 100: still **1/15** (C28).
+- Six scores moved, all from the raw-TTR → MATTR switch (the only
+  Stage 4 change that touches a STRESS3 probe): A28/A29 36 → 34 (the
+  low-ttr penalty depth changed; still Heavy slop), C01 46 → 45,
+  C13a 56 → 58 (low-ttr silent now; still slop), D06 45 → 53 and D16
+  45 → 52 (low-ttr silent now — the PAD filler measures MATTR 0.758
+  at any length; the repetition is still caught by repeated-bigrams),
+  D10 13 → 15 (still industrial). No probe changed band.
+- The widened burstiness gate (mean cap 16 → 26, minimum run 8 → 10
+  sentences) and the unsourced-number hype-context gate moved no
+  STRESS3 probe: the burstiness widening was checked against C22
+  (eight PAD sentences, mean 17.8, CV 0.024, pinned clean — spared by
+  the ten-sentence minimum), and no STRESS3 probe carries a k/m/b
+  figure without hype context.
+- Vocabulary union: 165 → **215** distinct terms (50 added suffix
+  forms); cliché union unchanged at 129. `src/lib/polish.test.ts`
+  F-53 re-pinned to 215; two polish tests re-pinned to MATTR behaviour
+  (dash slop 36 → 34, D06 45 → 53 with low-ttr silent).
