@@ -341,6 +341,12 @@ describe('fix2: F-36 package hygiene and CI', () => {
     expect(pkg.private).toBeUndefined()
     expect(pkg.files).toContain('bin')
     expect(pkg.files).toContain('dist')
+    // S2: the bare name `sloppy` is taken on npm by an unrelated
+    // project, so the package publishes scoped as @coldabs/sloppy.
+    // A scoped package defaults to restricted on publish — the
+    // access pin makes a plain `npm publish` public.
+    expect(pkg.name).toBe('@coldabs/sloppy')
+    expect(pkg.publishConfig?.access).toBe('public')
   })
 
   it('has a CI workflow that lints, typechecks, tests, and builds', () => {
