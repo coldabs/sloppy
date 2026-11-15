@@ -350,7 +350,7 @@ const metaDescription = (context: SiteContext): SiteHit[] => {
 }
 
 // ---------------------------------------------------------------------------
-// DOM-correlated CSS (Stage 5)
+// DOM-correlated CSS (Stage 5, parser hardened in F35/F36/F37)
 //
 // The style rules used to regex-grep the raw stylesheet text: a Tailwind
 // sheet defines `.rounded-full` once, so forty `rounded-full` elements
@@ -382,11 +382,11 @@ const metaDescription = (context: SiteContext): SiteHit[] => {
 //
 // Limits, stated honestly: selector matching is approximate for
 // compound selectors (`.a .b` counts when both classes occur
-// somewhere, not necessarily nested), attribute selectors such as
-// `[class*="step"]` are assumed used, CSS nesting (`&`) inside a
-// rule body is not parsed, and a var() fallback containing
-// parentheses is not expanded. None of these changes whether a rule
-// fires on the probe pages in stage5.test.ts.
+// somewhere, not necessarily nested), bare attribute selectors with
+// no class/id/type token are not counted (F37), CSS nesting (`&`)
+// is flattened into the enclosing selector (F35), and a var()
+// fallback containing parentheses is not expanded. None of these
+// changes whether a rule fires on the probe pages in stage5.test.ts.
 // ---------------------------------------------------------------------------
 
 interface ParsedCssRule {
@@ -410,65 +410,300 @@ interface ParsedCss {
 
 const parsedCssCache = new WeakMap<SiteContext, ParsedCss>()
 
-const stripCssComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
+// String-aware comment stripping (F35): the old regex
+// (`/\/\*[\s\S]*?\*\//g`) stripped from a `/*` inside a quoted string
+// to the next real comment's `*/`, eating declarations in between.
+// Strings are copied verbatim (backslash escapes honoured); only a
+// `/*` outside a string opens a comment.
+export const stripCssComments = (css: string): string => {
+  let out = ''
+  let i = 0
+  const n = css.length
+  while (i < n) {
+    const ch = css[i]
+    if (ch === '"' || ch === "'") {
+      const start = i
+      i++
+      while (i < n) {
+        if (css[i] === '\\') {
+          i += 2
+          continue
+        }
+        if (css[i] === ch) {
+          i++
+          break
+        }
+        i++
+      }
+      out += css.slice(start, i)
+      continue
+    }
+    if (ch === '/' && css[i + 1] === '*') {
+      const end = css.indexOf('*/', i + 2)
+      i = end === -1 ? n : end + 2
+      continue
+    }
+    out += ch
+    i++
+  }
+  return out
+}
 
-const parseCssRules = (css: string): ParsedCssRule[] => {
-  const rules: ParsedCssRule[] = []
-  const text = stripCssComments(css)
+// Skip a quoted string starting at `i` (which points at the opening
+// quote) and return the index just past its closing quote.
+const skipCssString = (text: string, i: number): number => {
+  const quote = text[i]
+  let j = i + 1
+  const n = text.length
+  while (j < n) {
+    if (text[j] === '\\') {
+      j += 2
+      continue
+    }
+    if (text[j] === quote) return j + 1
+    j++
+  }
+  return n
+}
+
+// Index of the `}` closing the block opened at `open`, skipping
+// braces inside quoted strings. -1 when the block never closes.
+const findMatchingBrace = (text: string, open: number): number => {
+  let depth = 0
+  let i = open
+  const n = text.length
+  while (i < n) {
+    const ch = text[i]
+    if (ch === '"' || ch === "'") {
+      i = skipCssString(text, i)
+      continue
+    }
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return i
+    }
+    i++
+  }
+  return -1
+}
+
+// Split a selector list on commas outside parentheses, brackets, and
+// quotes, so `:is(.a, .b)` and `[data-label="a, b"]` stay whole.
+const splitSelectorList = (selector: string): string[] => {
+  const parts: string[] = []
+  let depth = 0
+  let quote = ''
+  let start = 0
+  for (let i = 0; i < selector.length; i++) {
+    const ch = selector[i]
+    if (quote) {
+      if (ch === '\\') {
+        i++
+        continue
+      }
+      if (ch === quote) quote = ''
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      continue
+    }
+    if (ch === '(' || ch === '[') depth++
+    else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1)
+    else if (ch === ',' && depth === 0) {
+      parts.push(selector.slice(start, i))
+      start = i + 1
+    }
+  }
+  parts.push(selector.slice(start))
+  return parts.map((part) => part.trim()).filter(Boolean)
+}
+
+// Combine a nested selector with its parent: `&` is replaced by the
+// parent, a selector without `&` becomes a descendant of it. Selector
+// lists cross-multiply (`.a, .b` nesting `&:hover, .c` gives four).
+const combineSelectors = (parent: string, child: string): string => {
+  const parents = splitSelectorList(parent)
+  const children = splitSelectorList(child)
+  const out: string[] = []
+  for (const p of parents) {
+    for (const c of children) {
+      out.push(c.includes('&') ? c.split('&').join(p) : `${p} ${c}`)
+    }
+  }
+  return out.join(', ')
+}
+
+interface NestedCssBlock {
+  selector: string
+  body: string
+}
+
+// Split a rule body into its own declarations and its nested rule
+// blocks. The text before a nested `{` can hold declarations as well
+// as the nested selector (`color: red; & .inner { ... }`), so the
+// selector is the text after the last `;` in that stretch.
+const splitRuleBody = (body: string): { declarations: string; nested: NestedCssBlock[] } => {
+  const nested: NestedCssBlock[] = []
+  const declParts: string[] = []
+  let i = 0
+  const n = body.length
+  let segmentStart = 0
+  while (i < n) {
+    const ch = body[i]
+    if (ch === '"' || ch === "'") {
+      i = skipCssString(body, i)
+      continue
+    }
+    if (ch === '{') {
+      const segment = body.slice(segmentStart, i)
+      const lastSemi = segment.lastIndexOf(';')
+      const selector = (lastSemi === -1 ? segment : segment.slice(lastSemi + 1)).trim()
+      if (lastSemi !== -1) declParts.push(segment.slice(0, lastSemi + 1))
+      const close = findMatchingBrace(body, i)
+      const end = close === -1 ? n : close
+      if (selector) nested.push({ selector, body: body.slice(i + 1, end) })
+      i = end + 1
+      segmentStart = i
+      continue
+    }
+    i++
+  }
+  declParts.push(body.slice(segmentStart))
+  return { declarations: declParts.join(''), nested }
+}
+
+const GROUPING_AT_RULES = new Set(['@media', '@supports', '@layer', '@container', '@scope'])
+
+const atRuleName = (selector: string) => selector.split(/\s/, 1)[0].toLowerCase()
+
+// One rule (selector + body) with its parent selector already known:
+// flatten native nesting into the enclosing selector, keep the rule's
+// own declarations, and recurse into nested blocks. An at-rule nested
+// inside a rule (e.g. @media in a nested block) keeps the enclosing
+// selector as the context for its inner rules.
+const processRule = (
+  selector: string,
+  body: string,
+  parent: string | null,
+  rules: ParsedCssRule[],
+): void => {
+  const combined = parent ? combineSelectors(parent, selector) : selector
+  const { declarations, nested } = splitRuleBody(body)
+  if (declarations.trim()) rules.push({ selector: combined, body: declarations })
+  for (const block of nested) {
+    if (block.selector.startsWith('@')) {
+      const name = atRuleName(block.selector)
+      if (!GROUPING_AT_RULES.has(name)) continue
+      if (name === '@media' && /\b(?:print|speech)\b/i.test(block.selector)) continue
+      collectCssRules(block.body, combined, rules)
+      continue
+    }
+    processRule(block.selector, block.body, combined, rules)
+  }
+}
+
+// Collect the top-level rules of a stylesheet chunk (or an at-rule
+// body). `parent` is the selector of an enclosing nested rule, if any.
+const collectCssRules = (text: string, parent: string | null, rules: ParsedCssRule[]): void => {
   let i = 0
   const n = text.length
   while (i < n) {
-    while (i < n && /\s/.test(text[i])) i++
-    if (i >= n) break
-    const open = text.indexOf('{', i)
-    if (open === -1) break
-    // A statement without a block (@import, @charset) ends at ';' and
-    // must not swallow the next rule's selector.
-    const semi = text.indexOf(';', i)
-    if (semi !== -1 && semi < open) {
-      i = semi + 1
+    // Find the next `{` or `;` outside strings. A `;` first means a
+    // block-less statement (@import, @charset) — skip past it so it
+    // cannot swallow the next rule's selector.
+    let open = -1
+    let hitSemi = false
+    let j = i
+    while (j < n) {
+      const ch = text[j]
+      if (ch === '"' || ch === "'") {
+        j = skipCssString(text, j)
+        continue
+      }
+      if (ch === '{') {
+        open = j
+        break
+      }
+      if (ch === ';') {
+        hitSemi = true
+        break
+      }
+      j++
+    }
+    if (hitSemi) {
+      i = j + 1
       continue
     }
+    if (open === -1) break
     let selector = text.slice(i, open).trim()
     const lastSemi = selector.lastIndexOf(';')
     if (lastSemi !== -1) selector = selector.slice(lastSemi + 1).trim()
-    let depth = 1
-    let j = open + 1
-    while (j < n && depth > 0) {
-      if (text[j] === '{') depth++
-      else if (text[j] === '}') depth--
-      j++
-    }
-    const body = text.slice(open + 1, j - 1)
-    i = j
+    const close = findMatchingBrace(text, open)
+    const end = close === -1 ? n : close
+    const body = text.slice(open + 1, end)
+    i = end + 1
     if (!selector) continue
     if (selector.startsWith('@')) {
-      const atName = selector.split(/\s/, 1)[0].toLowerCase()
-      if (
-        atName === '@media' ||
-        atName === '@supports' ||
-        atName === '@layer' ||
-        atName === '@container' ||
-        atName === '@scope'
-      ) {
-        // Print (and speech) styles are not what the visitor sees.
-        if (atName === '@media' && /\b(?:print|speech)\b/i.test(selector)) continue
-        // Pushed one at a time, not spread: a large stylesheet can
-        // return more rules than a spread call can take (F5).
-        for (const rule of parseCssRules(body)) rules.push(rule)
-      }
-      // @keyframes, @font-face, @page and friends carry no element styles.
+      const name = atRuleName(selector)
+      if (!GROUPING_AT_RULES.has(name)) continue
+      // Print (and speech) styles are not what the visitor sees.
+      if (name === '@media' && /\b(?:print|speech)\b/i.test(selector)) continue
+      collectCssRules(body, parent, rules)
       continue
     }
-    rules.push({ selector, body })
+    processRule(selector, body, parent, rules)
   }
+}
+
+const parseCssRules = (css: string): ParsedCssRule[] => {
+  const rules: ParsedCssRule[] = []
+  collectCssRules(stripCssComments(css), null, rules)
   return rules
+}
+
+// Split a declaration block on `;` outside quotes and parentheses, so
+// a `;` inside a data URI or a url() never ends a declaration early.
+// A part still holding a brace outside quotes is a nested block that
+// leaked in — it is skipped, not parsed as a declaration.
+const splitDeclarations = (body: string): string[] => {
+  const parts: string[] = []
+  let depth = 0
+  let quote = ''
+  let start = 0
+  let braced = false
+  const push = (end: number) => {
+    if (!braced) parts.push(body.slice(start, end))
+    braced = false
+    start = end + 1
+  }
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    if (quote) {
+      if (ch === '\\') {
+        i++
+        continue
+      }
+      if (ch === quote) quote = ''
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      continue
+    }
+    if (ch === '(') depth++
+    else if (ch === ')') depth = Math.max(0, depth - 1)
+    else if (ch === '{' || ch === '}') braced = true
+    else if (ch === ';' && depth === 0) push(i)
+  }
+  push(body.length)
+  return parts
 }
 
 const declarationsOf = (body: string): Array<{ property: string; value: string }> => {
   const out: Array<{ property: string; value: string }> = []
-  for (const part of body.split(';')) {
-    if (part.includes('{') || part.includes('}')) continue
+  for (const part of splitDeclarations(body)) {
     const colon = part.indexOf(':')
     if (colon === -1) continue
     const property = part.slice(0, colon).trim().toLowerCase()

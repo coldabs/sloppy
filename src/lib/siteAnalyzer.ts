@@ -13,6 +13,7 @@ import {
   collectCss,
   extractPageText,
   siteRules,
+  stripCssComments,
   type SiteGroup,
   type SiteHit,
   type SiteRuleMeta,
@@ -63,8 +64,6 @@ export interface SiteSource {
   stylesheets?: string[]
 }
 
-const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
-
 // A rule's penalty grows with its occurrences and levels off, so twenty
 // dead links cost more than two but cannot decide a page on their own.
 // One or two occurrences cost exactly what they cost before, so the
@@ -99,7 +98,7 @@ export const analyzeSite = ({ url, html, stylesheets = [] }: SiteSource): SiteAn
   const fullText = extractPageText(doc)
   const text = fullText.slice(0, SITE_TEXT_LIMIT)
   const copy = analyze(text)
-  const css = stripComments([collectCss(doc), ...stylesheets].join('\n'))
+  const css = stripCssComments([collectCss(doc), ...stylesheets].join('\n'))
   const context = { doc, css, text, url }
 
   const groups: SiteFindingGroup[] = []
