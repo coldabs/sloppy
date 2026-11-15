@@ -107,7 +107,7 @@ copy text is clean prose.
    2.5 times the low weight. The standard penalty is density measured
    twice and blended: once over the whole draft, and once over the
    worst 100-word sliding window (step 25 words), combined as
-   0.35 * global + 0.65 * peak, so a sloppy passage cannot be washed
+   0.15 * global + 0.85 * peak, so a sloppy passage cannot be washed
    out by clean filler. A sentence where three or more distinct
    phrase-rule groups fire carries an extra 25% of its apportioned
    penalty share: co-occurring signals in one sentence are one
@@ -117,10 +117,14 @@ copy text is clean prose.
    are not sentence-local evidence and take no part in the boost.
 2. One hit in a short draft costs far more than the same hit in a long
    one. Short drafts are scored against an adaptive floor,
-   min(50, max(12, round(words * 2.2))): a one-word draft is judged
-   as 12 words, a five-word tagline as 12 too, scaling smoothly up to
-   50 words at 23 words. A one-word draft containing a listed word
-   ("seamless") scores 48.
+   min(50, max(8, words)): a draft is judged at its own length, with
+   a minimum of 8 words and a cap of 50. A draft under 8 words is too
+   short to score — the verdict says so and the number is not
+   meaningful (a one-word draft containing a listed word, "seamless",
+   carries the "Too short to score" verdict). The old floor
+   (min(50, max(12, round(words * 2.2)))) inflated a 21-word draft
+   to 46 words, so adding clean words washed a single hit out
+   (fixed 2026-11-15, F21).
 3. The penalty decays on a curve:
 
    `score = round(100 * e^(-penalty / 55))`
@@ -391,14 +395,15 @@ of the same sizes.
   strict one. The rest of the thresholds are still hard cliffs by
   design: a draft one unit under a threshold passes, and one unit
   over it does not.
-- Density has an adaptive floor: a draft under 23 words is scored as
-  if it were more words than it has — min(50, max(12, round(words *
-  2.2))) — so a one-word draft that contains a listed word ("seamless")
-  scores 48. That is the floor working as designed, not a bug — but it
-  means a single word on its own is never clean if the word is listed.
-  Below 23 words the floor still grows with the draft, so adding words
-  to a very short draft can raise its score a little even when nothing
-  is cleared; the floor caps at 50, so the effect ends at 23 words.
+- Density has an adaptive floor: a draft is scored at its own length,
+  min(50, max(8, words)) — so a one-word draft is judged as 8 words,
+  not 50. A draft under 8 words is too short to score: the verdict
+  says so and the number is not meaningful. A single word on its own
+  is never clean if the word is listed, but the verdict is "Too short
+  to score", not a band. Below 50 words the floor is the draft's own
+  length, so adding words to a short draft raises its score by honest
+  density even when nothing is cleared; the floor caps at 50, so the
+  effect ends at 50 words.
 - The diversity signals are supporting signals, not verdicts. Burstiness
   is fragile on short drafts, MATTR can stay high when varied
   sentences repeat (that repetition is the repeated-bigram rule's
@@ -422,16 +427,17 @@ of the same sizes.
   says it twice, and a single hit in a short draft costs more than
   the same hit in a long one. Adding clean words still softens the
   global term, but the peak 100-word window holds the worst passage:
-  a 49-word sloppy hero scores 9 alone and 33 with 1,000 clean words
-  appended (penalty 133.53 to 61.27), where the old global-only
+  a 49-word sloppy hero scores 9 alone and 25 with 1,000 clean words
+  appended (penalty 135.09 to 76.13), where the old global-only
   scoring let it rise to 79. A fake-citation variant of a flagged text
   can still score higher than the original — the literal HEAD-TO-HEAD
-  pair moves 31 to 34 — but not through dilution and not through a
-  cleared hit: the adaptive floor grows from 44 to 50 across that
-  pair, and the fake citation clears nothing (the rule still fires,
-  with all three unsourced-number hits). Before the F17 fix the pair
-  moved 31 to 40, because the pricing link cleared one hit whenever
-  the word "report" sat beside it. At or above the 23-word floor cap, with
+  pair moves 15 to 22 — but not through dilution and not through a
+  cleared hit: the floor is the draft's own length (20 to 29 words
+  across that pair), and the fake citation clears nothing (the rule
+  still fires, with all three unsourced-number hits). Before the F17
+  fix the pair moved 31 to 40, because the pricing link cleared one
+  hit whenever the word "report" sat beside it; under the old floor
+  the pair was 31 to 34. At or above the 50-word floor cap, with
   the same hits, added words alone change nothing.
 - False positives are normal. The common ones are handled — "Explore
   the codebase", a compliance claim that links its audit, known
