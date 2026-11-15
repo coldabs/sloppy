@@ -21,7 +21,7 @@ import {
 const ruleIds = (text: string) =>
   analyze(text).findings.map((finding) => finding.ruleId)
 
-const cleanCorpus: Array<[string, string]> = [
+export const cleanCorpus: Array<[string, string]> = [
   [
     'academic abstract',
     'We measured sentence-length variation in 412 published essays and 380 machine-generated essays written between January and June 2024. Human essays showed a mean sentence length of 18.4 words with a standard deviation of 11.2 words. Machine-generated essays averaged 17.9 words with a standard deviation of 6.1 words. The difference in variance was significant at p < 0.01. These results suggest that variance, rather than mean length, separates the two groups in this corpus. The dataset and the analysis code are available in the project repository.',

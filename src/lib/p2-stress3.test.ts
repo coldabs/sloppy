@@ -73,7 +73,7 @@ const bandOk = (score: number, band: Band): boolean => {
 }
 
 // (a) Evasion — A01–A30
-const evasionProbes: Probe[] = [
+export const evasionProbes: Probe[] = [
   {
     id: 'A01',
     group: 'evasion',
@@ -287,7 +287,7 @@ const evasionProbes: Probe[] = [
 ]
 
 // (b) False positives on clean human text — B01–B35
-const falsePositiveProbes: Probe[] = [
+export const falsePositiveProbes: Probe[] = [
   {
     id: 'B01',
     group: 'false-positive',
@@ -543,7 +543,7 @@ const falsePositiveProbes: Probe[] = [
 ]
 
 // (c) False negatives — slop that should score low but might not — C01–C40
-const falseNegativeProbes: Probe[] = [
+export const falseNegativeProbes: Probe[] = [
   {
     id: 'C01',
     group: 'false-negative',
@@ -860,7 +860,7 @@ const falseNegativeProbes: Probe[] = [
 ]
 
 // (d) Scoring / length / caps edge cases — D01–D15
-const edgeProbes: Probe[] = [
+export const edgeProbes: Probe[] = [
   {
     id: 'D03',
     group: 'edge',
@@ -1034,7 +1034,7 @@ const perfProbes: Array<{ id: string; text: string; note: string }> = [
   },
 ]
 
-const allProbes: Probe[] = [
+export const allProbes: Probe[] = [
   ...evasionProbes,
   ...falsePositiveProbes,
   ...falseNegativeProbes,
