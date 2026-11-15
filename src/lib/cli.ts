@@ -157,7 +157,13 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
       continue
     }
     if (!endOfFlags && arg.startsWith('--')) {
-      const [flag, inline] = arg.split('=', 2)
+      // Split on the FIRST '=' only: the value keeps its own '='
+      // characters, so --url=https://example.com/?page=1&utm=ai
+      // survives intact. (arg.split('=', 2) discarded everything
+      // after the second '='.)
+      const eq = arg.indexOf('=')
+      const flag = eq === -1 ? arg : arg.slice(0, eq)
+      const inline = eq === -1 ? undefined : arg.slice(eq + 1)
       const valueOf = (name: string): string => {
         if (inline !== undefined) return inline
         const taken = takeValue(argv, i, name)
@@ -181,7 +187,14 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
         }
         format = value
       } else if (flag === '--threshold') {
-        const value = Number(valueOf('--threshold'))
+        const raw = valueOf('--threshold')
+        // Reject an empty value before Number(): Number('') === 0,
+        // which used to pass validation and silently set the
+        // threshold to 0, letting a failing file pass CI.
+        if (raw.trim() === '') {
+          throw new CliError('--threshold must be a number from 0 to 100.')
+        }
+        const value = Number(raw)
         if (!Number.isFinite(value) || value < 0 || value > 100) {
           throw new CliError('--threshold must be a number from 0 to 100.')
         }
