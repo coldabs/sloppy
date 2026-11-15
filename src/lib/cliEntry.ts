@@ -5,8 +5,8 @@
 //
 // analyzeSite() needs a DOM — DOMParser, and the HTMLInputElement
 // check in the site rules — which node does not have. The bundle
-// registers the missing globals from happy-dom (already a
-// devDependency, used by the tests) before anything analyses a page.
+// registers the missing globals from happy-dom (a dependency — the
+// CLI needs a DOM for site scans) before anything analyses a page.
 // Only names node does not already define are copied, so node's own
 // fetch, URL, and timers are never shadowed.
 

@@ -58,7 +58,9 @@ export interface SarifLog {
       }
     }
     results: SarifResult[]
-    properties: { score: number; verdict: string }
+    // The score is null when the page was not readable (F34): no
+    // numeric score is given for a page that was never read.
+    properties: { score: number | null; verdict: string }
   }>
 }
 
@@ -133,7 +135,7 @@ const copyResult = (finding: Finding, text: string, uri: string): SarifResult =>
 }
 
 const buildSarif = (
-  score: number,
+  score: number | null,
   verdict: string,
   toolVersion: string,
   sarifRules: SarifRule[],

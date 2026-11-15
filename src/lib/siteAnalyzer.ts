@@ -38,7 +38,10 @@ export interface SiteAnalysis {
   url: string
   title: string
   description: string
-  score: number
+  // Null when the page was not readable (F34): the fetch saw no
+  // readable copy, no links, and no headings, so no numeric score
+  // is given for a page that was never read.
+  score: number | null
   verdict: string
   structure: SiteFindingGroup[]
   style: SiteFindingGroup[]
@@ -130,7 +133,7 @@ export const analyzeSite = ({ url, html, stylesheets = [] }: SiteSource): SiteAn
 
   sitePenalty += Math.min(stylePenalty, STYLE_PENALTY_CAP)
   const penalty = copy.penalty + sitePenalty
-  const score = scoreFromPenalty(penalty)
+  const numericScore = scoreFromPenalty(penalty)
   const occurrencesFor = (id: string) =>
     groups.find((group) => group.rule.id === id)?.occurrences ?? 0
   const meta = doc.querySelector('meta[name="description"]')
@@ -145,12 +148,25 @@ export const analyzeSite = ({ url, html, stylesheets = [] }: SiteSource): SiteAn
     inlineStyles: doc.querySelectorAll('style').length,
   }
 
+  // A page the fetch never actually read — an empty client-rendered
+  // shell — must not get a numeric clean score (F34). No readable
+  // copy, no links, and no headings means nothing was read, so the
+  // score is null and the verdict says so. The findings that were
+  // found are still reported: they describe the shell, not the page.
+  const readable = !(
+    copy.words < 50 &&
+    stats.links === 0 &&
+    stats.headings === 0
+  )
+  const score = readable ? numericScore : null
+  const verdict = readable ? verdictFor(numericScore) : 'Page not readable'
+
   return {
     url,
     title: doc.title.trim(),
     description: (meta?.getAttribute('content') ?? '').trim(),
     score,
-    verdict: verdictFor(score),
+    verdict: verdict,
     structure: sortGroups(groups.filter((group) => group.rule.group === 'structure')),
     style: sortGroups(groups.filter((group) => group.rule.group === 'style')),
     copy,

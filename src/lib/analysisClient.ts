@@ -1,9 +1,15 @@
-// Runs analyze() and analyzeSite() in the worker from
-// analysisWorker.ts, with a main-thread fallback: if Workers are
-// unavailable, the worker fails to start, or a request errors or
-// times out, the same analyser runs on the main thread and returns
-// the same result. The UI never sees the difference, only the
-// thread the work ran on.
+// Runs analyze() in the worker from analysisWorker.ts, with a
+// main-thread fallback: if Workers are unavailable, the worker
+// fails to start, or a request errors or times out, the same
+// analyser runs on the main thread and returns the same result. The
+// UI never sees the difference, only the thread the work ran on.
+//
+// Website analysis does NOT go through the worker:
+// analyzeSite() needs DOMParser, which does not exist in a worker,
+// so every site scan sent here threw and fell back anyway (F2).
+// analyzeSiteAsync runs analyzeSite() on the main thread directly —
+// the same result the fallback always produced, without the doomed
+// round-trip. Only copy analysis (the paste path) runs off-thread.
 //
 // A request that never answers falls back after WORKER_TIMEOUT_MS
 // instead of hanging the scan: the worker is slow to fail in some
@@ -63,6 +69,24 @@ export const resetAnalysisWorker = (): void => {
   workerBroken = false
 }
 
+// Stop using the worker for the rest of the session: terminate
+// whatever is running and remember not to spawn another one. Used
+// when the worker itself fails (an error response or an onerror),
+// not for a single bad input — the main-thread fallback gives the
+// identical result, so a broken worker costs nothing to drop and
+// everything to keep retrying.
+const breakWorker = (): void => {
+  workerBroken = true
+  if (worker) {
+    try {
+      worker.terminate()
+    } catch {
+      // Terminating a dead worker is not an error worth surfacing.
+    }
+    worker = null
+  }
+}
+
 const createWorker = (): Worker | null => {
   const override = workerFactoryOverride
   // An injected factory decides: a fake worker for tests, or null
@@ -98,13 +122,12 @@ const getWorker = (): Worker | null => {
     worker.onerror = () => {
       // The worker died: fail every pending request over to the
       // main-thread fallback, and stop trying the worker.
-      workerBroken = true
       for (const [, item] of pending) {
         clearTimeout(item.timer)
         item.reject(new Error('The analysis worker failed.'))
       }
       pending.clear()
-      worker = null
+      breakWorker()
     }
   }
   return worker
@@ -119,6 +142,17 @@ const runInWorker = (request: AnalysisRequest): Promise<AnalysisResponse> =>
     }
     const timer = setTimeout(() => {
       pending.delete(request.id)
+      // The worker is wedged on this request: terminate it instead
+      // of leaving it alive to hold the next scan hostage. The next
+      // request spawns a fresh worker — the worker is not marked
+      // broken, because a timeout can be input-specific (a huge
+      // paste) rather than a broken worker.
+      try {
+        target.terminate()
+      } catch {
+        // Terminating a dead worker is not an error worth surfacing.
+      }
+      if (worker === target) worker = null
       reject(new Error('The analysis worker timed out.'))
     }, WORKER_TIMEOUT_MS)
     pending.set(request.id, { resolve, reject, timer })
@@ -139,7 +173,13 @@ const runOrFallback = async <T,>(
 ): Promise<T> => {
   try {
     const response = await runInWorker(request)
-    if (!response.ok) throw new Error(response.error)
+    if (!response.ok) {
+      // The worker answered with a failure: it is not going to
+      // answer the next request either, so stop sending it work.
+      // The fallback below returns the identical result.
+      breakWorker()
+      throw new Error(response.error)
+    }
     return response.result as T
   } catch {
     // Any worker failure — unavailable, dead, timed out, or an
@@ -153,8 +193,13 @@ const runOrFallback = async <T,>(
 export const analyzeCopyAsync = (text: string): Promise<Analysis> =>
   runOrFallback({ id: nextId++, kind: 'copy', text }, () => analyze(text))
 
-export const analyzeSiteAsync = (source: SiteSource): Promise<SiteAnalysis> =>
-  runOrFallback({ id: nextId++, kind: 'site', source }, () => analyzeSite(source))
+// Website analysis runs on the main thread, not in the worker:
+// analyzeSite() needs DOMParser, which a worker does not have
+// (F2). This is the same analyser the fallback always ran —
+// identical result, without the failed worker round-trip.
+export const analyzeSiteAsync = async (
+  source: SiteSource,
+): Promise<SiteAnalysis> => analyzeSite(source)
 
 // For tests: the handler, so a fake worker can answer exactly like
 // the real one.

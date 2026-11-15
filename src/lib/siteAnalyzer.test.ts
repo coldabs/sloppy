@@ -105,7 +105,10 @@ describe('analyzeSite', () => {
   it('scores a sloppy page lower than a clean page', () => {
     const sloppy = analyzeSite({ url: 'https://example.com/', html: sloppyPage })
     const clean = analyzeSite({ url: 'https://example.com/', html: cleanPage })
-    expect(sloppy.score).toBeLessThan(clean.score)
+    // Both fixtures have headings, so both get a numeric score.
+    expect(sloppy.score).not.toBeNull()
+    expect(clean.score).not.toBeNull()
+    expect(sloppy.score as number).toBeLessThan(clean.score as number)
     expect(sloppy.counts.high).toBeGreaterThan(0)
   })
 

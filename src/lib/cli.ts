@@ -15,6 +15,7 @@
 // testable here without spawning a process.
 
 import { readFile } from 'node:fs/promises'
+import { fetchCss, fetchPage, FetchError } from '../../server/fetch.mjs'
 import { analyze, type Analysis } from './analyzer'
 import { copyToSarif, siteToSarif, type SarifLog } from './sarif'
 import { analyzeSite, type SiteAnalysis, type SiteSource } from './siteAnalyzer'
@@ -43,7 +44,7 @@ Options:
   --help, -h                    show this help
   --version, -V                 print the version
 
-Exit codes: 0 score met the threshold, 1 score below it, 2 usage or fetch error.
+Exit codes: 0 score met the threshold, 1 score below it, 2 usage, fetch error, or page not readable.
 
 Examples:
   sloppy draft.txt
@@ -65,12 +66,48 @@ export interface CliOptions {
   version: boolean
 }
 
+// How a website scan gets its HTML and CSS. Tests inject a fake
+// fetcher so the CLI's URL path can be exercised against a local
+// server the real guard would (correctly) refuse.
+export interface SiteFetcher {
+  fetchPage: (url: string) => Promise<{ url: string; html: string }>
+  fetchCss: (url: string) => Promise<{ css: string }>
+}
+
+// The default fetcher is the server's guarded fetch
+// (server/fetch.mjs): DNS-pinned, private and loopback addresses
+// blocked, redirects re-validated, 10 s timeout, 8 MB page cap —
+// the same guard the Website panel uses. The CLI used to fetch
+// URLs with a bare globalThis.fetch, which fetched loopback
+// addresses with no guard at all (F1).
+const toCliError = (caught: unknown, target: string): CliError => {
+  if (caught instanceof FetchError) {
+    return new CliError(`The page could not be fetched: ${caught.message}`)
+  }
+  return new CliError(`The page could not be fetched: ${target}.`)
+}
+
+export const guardedSiteFetcher: SiteFetcher = {
+  fetchPage: async (url) => {
+    try {
+      const page = await fetchPage(url)
+      return { url: page.url, html: page.html }
+    } catch (caught) {
+      throw toCliError(caught, url)
+    }
+  },
+  fetchCss: async (url) => {
+    const result = await fetchCss(url)
+    return { css: result.css }
+  },
+}
+
 // Streams and file access, injected so tests can drive the CLI
 // without a process. The defaults are the real process streams.
 export interface CliIo {
   readStdin: () => Promise<string>
   readFile: (path: string) => Promise<string>
-  fetch: (url: string) => Promise<Response>
+  fetchSite: SiteFetcher
   stdinIsTTY: boolean
   writeOut: (text: string) => void
   writeErr: (text: string) => void
@@ -85,7 +122,7 @@ const readProcessStdin = async (): Promise<string> => {
 export const defaultIo = (): CliIo => ({
   readStdin: readProcessStdin,
   readFile: (path) => readFile(path, 'utf8'),
-  fetch: (url) => globalThis.fetch(url),
+  fetchSite: guardedSiteFetcher,
   stdinIsTTY: process.stdin.isTTY ?? false,
   writeOut: (text) => process.stdout.write(text),
   writeErr: (text) => process.stderr.write(text),
@@ -280,25 +317,24 @@ export const siteJsonReport = (site: SiteAnalysis, toolVersion: string) => {
 
 // Fetch a page the way the Website panel does: the HTML plus its
 // linked stylesheets (at most five, in document order), so the site
-// rules see the same CSS the browser scan would. A stylesheet that
-// fails to fetch is skipped, never fatal.
+// rules see the same CSS the browser scan would. The fetch goes
+// through the server's SSRF guard (see guardedSiteFetcher): private
+// and loopback addresses are refused, redirects are re-validated,
+// and the page is capped at 8 MB. A stylesheet that fails to fetch
+// is skipped, never fatal.
 export const fetchSiteSource = async (
   target: string,
-  fetchImpl: CliIo['fetch'],
+  fetcher: SiteFetcher,
 ): Promise<SiteSource> => {
-  let response: Response
+  let page: { url: string; html: string }
   try {
-    response = await fetchImpl(target)
-  } catch {
+    page = await fetcher.fetchPage(target)
+  } catch (caught) {
+    if (caught instanceof CliError) throw caught
     throw new CliError(`The page could not be fetched: ${target}.`)
   }
-  if (!response.ok) {
-    throw new CliError(
-      `The page could not be fetched (HTTP ${response.status}): ${target}.`,
-    )
-  }
-  const html = await response.text()
-  const finalUrl = response.url || target
+  const html = page.html
+  const finalUrl = page.url
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const hrefs: string[] = []
   for (const link of doc.querySelectorAll('link[href]')) {
@@ -315,9 +351,8 @@ export const fetchSiteSource = async (
   const stylesheets = (
     await Promise.allSettled(
       [...new Set(hrefs)].slice(0, MAX_STYLESHEETS).map(async (href) => {
-        const cssResponse = await fetchImpl(href)
-        if (!cssResponse.ok) throw new Error('Stylesheet skipped')
-        return cssResponse.text()
+        const result = await fetcher.fetchCss(href)
+        return result.css
       }),
     )
   ).flatMap((result) =>
@@ -352,10 +387,10 @@ export const runCli = async (
   }
 
   try {
-    let score: number
+    let score: number | null
     let output: string
     if (options.input?.kind === 'url') {
-      const source = await fetchSiteSource(options.input.url, io.fetch)
+      const source = await fetchSiteSource(options.input.url, io.fetchSite)
       const site = analyzeSite(source)
       score = site.score
       output =
@@ -392,6 +427,9 @@ export const runCli = async (
           : JSON.stringify(copyJsonReport(analysis, inputName, version), null, 2)
     }
     io.writeOut(`${output}\n`)
+    // An unreadable page (F34) has no score: it is a failed scan,
+    // not a failed gate, so it exits 2 like a fetch error.
+    if (score === null) return 2
     return score >= options.threshold ? 0 : 1
   } catch (caught) {
     io.writeErr(

@@ -1,8 +1,17 @@
-// The analysis worker: analyze() and analyzeSite() run here, off
-// the main thread, so pasting 60,000 characters never blocks the UI.
-// Vite bundles this file as a separate chunk (see the `new Worker`
-// call in analysisClient.ts); the page loads it over HTTP like any
-// other asset.
+// The analysis worker: analyze() runs here, off the main thread,
+// so pasting 60,000 characters never blocks the UI. Vite bundles
+// this file as a separate chunk (see the `new Worker` call in
+// analysisClient.ts); the page loads it over HTTP like any other
+// asset.
+//
+// Only copy analysis runs in the worker. Website analysis runs on
+// the main thread (see analyzeSiteAsync): analyzeSite() needs a
+// DOM — DOMParser — which does not exist on
+// DedicatedWorkerGlobalScope, so every site scan sent here threw
+// ReferenceError and fell back to the main thread anyway, repeating
+// the failed multi-megabyte transfer on every scan (F2). Sending
+// site work to the worker again would need a worker-side DOM, not
+// a new call site.
 //
 // The request handler is a plain exported function, not just an
 // onmessage closure, so tests can call it directly and compare its
@@ -18,22 +27,12 @@
 // time.
 
 import { analyze, type Analysis } from './analyzer'
-import {
-  analyzeSite,
-  type SiteAnalysis,
-  type SiteFindingGroup,
-  type SiteSource,
-} from './siteAnalyzer'
 import type { RuleDefinition } from './rules'
-import type { SiteRuleMeta } from './siteRules'
 
-export type AnalysisRequest =
-  | { id: number; kind: 'copy'; text: string }
-  | { id: number; kind: 'site'; source: SiteSource }
+export type AnalysisRequest = { id: number; kind: 'copy'; text: string }
 
 export type AnalysisResponse =
   | { id: number; ok: true; kind: 'copy'; result: Analysis }
-  | { id: number; ok: true; kind: 'site'; result: SiteAnalysis }
   | { id: number; ok: false; error: string }
 
 // A rule without its functions: everything the UI reads, nothing
@@ -50,8 +49,7 @@ const cloneableRule = (rule: RuleDefinition): RuleDefinition =>
     fix: rule.fix,
   }) as RuleDefinition
 
-// A copy analysis safe to postMessage. Site analyses carry the same
-// copy analysis inside them, so they go through this too.
+// A copy analysis safe to postMessage.
 export const cloneableAnalysis = (analysis: Analysis): Analysis => ({
   ...analysis,
   groups: analysis.groups.map((group) => ({
@@ -60,29 +58,6 @@ export const cloneableAnalysis = (analysis: Analysis): Analysis => ({
   })),
 })
 
-export const cloneableSiteAnalysis = (site: SiteAnalysis): SiteAnalysis => ({
-  ...site,
-  copy: cloneableAnalysis(site.copy),
-  // A site group carries the full site rule, including its `detect`
-  // function — same clone problem, same fix: keep the metadata the
-  // panel reads (id, label, group, severity, note, fix) and drop
-  // the function.
-  structure: site.structure.map(cloneableSiteGroup),
-  style: site.style.map(cloneableSiteGroup),
-})
-
-const cloneableSiteGroup = (group: SiteFindingGroup): SiteFindingGroup => {
-  const rule: SiteRuleMeta = {
-    id: group.rule.id,
-    label: group.rule.label,
-    group: group.rule.group,
-    severity: group.rule.severity,
-    note: group.rule.note,
-    fix: group.rule.fix,
-  }
-  return { rule, hits: group.hits, occurrences: group.occurrences }
-}
-
 // One request in, one response out, same result as calling the
 // analyser directly: the worker adds no scoring of its own, and a
 // failure is reported as a response instead of killing the worker.
@@ -90,19 +65,11 @@ export const handleAnalysisRequest = (
   request: AnalysisRequest,
 ): AnalysisResponse => {
   try {
-    if (request.kind === 'copy') {
-      return {
-        id: request.id,
-        ok: true,
-        kind: 'copy',
-        result: cloneableAnalysis(analyze(request.text)),
-      }
-    }
     return {
       id: request.id,
       ok: true,
-      kind: 'site',
-      result: cloneableSiteAnalysis(analyzeSite(request.source)),
+      kind: 'copy',
+      result: cloneableAnalysis(analyze(request.text)),
     }
   } catch (caught) {
     return {

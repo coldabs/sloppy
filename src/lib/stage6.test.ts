@@ -22,11 +22,10 @@ import {
 } from './analysisClient'
 import {
   cloneableAnalysis,
-  cloneableSiteAnalysis,
   handleAnalysisRequest,
   type AnalysisRequest,
 } from './analysisWorker'
-import { runCli, type CliIo } from './cli'
+import { runCli, type CliIo, type SiteFetcher } from './cli'
 import { exampleDraft } from './exampleDraft'
 import { copyToSarif, sarifLevel, siteToSarif } from './sarif'
 import { analyzeSite, type SiteSource } from './siteAnalyzer'
@@ -39,7 +38,7 @@ const CLEAN_TEXT =
 // the local test server, while the real CLI runs in node and uses
 // undici fetch. This keeps the URL tests about the CLI, not about
 // which fetch the test environment provides.
-const nodeFetch: CliIo['fetch'] = (url) =>
+const nodeFetch = (url: string): Promise<Response> =>
   new Promise((resolve, reject) => {
     get(url, (res) => {
       const chunks: Buffer[] = []
@@ -56,6 +55,25 @@ const nodeFetch: CliIo['fetch'] = (url) =>
       })
     }).on('error', reject)
   })
+
+// A fake site fetcher that reads from a local test server over
+// node:http. The real CLI uses the guarded fetcher
+// (server/fetch.mjs), which would refuse a loopback test server —
+// the guard itself is covered by the critical-fixes tests, so the
+// URL tests here use this seam to exercise the CLI's reporting,
+// not its fetching.
+const nodeSiteFetcher: SiteFetcher = {
+  fetchPage: async (url) => {
+    const response = await nodeFetch(url)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return { url, html: await response.text() }
+  },
+  fetchCss: async (url) => {
+    const response = await nodeFetch(url)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return { css: await response.text() }
+  },
+}
 
 const slopAnalysis = () => analyze(exampleDraft)
 const cleanAnalysis = () => analyze(CLEAN_TEXT)
@@ -162,7 +180,7 @@ const makeIo = (opts: {
   files?: Record<string, string>
   stdin?: string
   stdinIsTTY?: boolean
-  fetchImpl?: CliIo['fetch']
+  fetchSiteImpl?: SiteFetcher
 }): { io: CliIo; out: () => string; err: () => string } => {
   let stdout = ''
   let stderr = ''
@@ -173,9 +191,14 @@ const makeIo = (opts: {
       if (value === undefined) throw new Error(`Cannot read ${path}.`)
       return value
     },
-    fetch: opts.fetchImpl ?? (async () => {
-      throw new Error('fetch is not stubbed in this test')
-    }),
+    fetchSite: opts.fetchSiteImpl ?? {
+      fetchPage: async () => {
+        throw new Error('fetchSite is not stubbed in this test')
+      },
+      fetchCss: async () => {
+        throw new Error('fetchSite is not stubbed in this test')
+      },
+    },
     stdinIsTTY: opts.stdinIsTTY ?? true,
     writeOut: (text) => {
       stdout += text
@@ -337,7 +360,7 @@ describe('stage6: CLI website scan', () => {
 
   it('scans a URL as JSON, with the stylesheet fetched', async () => {
     await startServer()
-    const { io, out, err } = makeIo({ fetchImpl: nodeFetch })
+    const { io, out, err } = makeIo({ fetchSiteImpl: nodeSiteFetcher })
     const code = await runCli(['--url', baseUrl], io, { version: '0.2.0' })
     expect(err()).toBe('')
     expect(code).toBe(1)
@@ -356,7 +379,7 @@ describe('stage6: CLI website scan', () => {
 
   it('scans a URL as SARIF', async () => {
     await startServer()
-    const { io, out, err } = makeIo({ fetchImpl: nodeFetch })
+    const { io, out, err } = makeIo({ fetchSiteImpl: nodeSiteFetcher })
     expect(
       await runCli(['--url', baseUrl, '--sarif'], io, { version: '0.2.0' }),
     ).toBe(1)
@@ -373,8 +396,13 @@ describe('stage6: CLI website scan', () => {
   it('exits 2 when the page cannot be fetched', async () => {
     await startServer()
     const { io, err } = makeIo({
-      fetchImpl: async () => {
-        throw new Error('network down')
+      fetchSiteImpl: {
+        fetchPage: async () => {
+          throw new Error('network down')
+        },
+        fetchCss: async () => {
+          throw new Error('network down')
+        },
       },
     })
     expect(await runCli(['--url', baseUrl], io, { version: '0.2.0' })).toBe(2)
@@ -401,23 +429,6 @@ describe('stage6: worker message handler', () => {
     expect(
       handleAnalysisRequest({ id: 8, kind: 'copy', text: CLEAN_TEXT }),
     ).toEqual({ id: 8, ok: true, kind: 'copy', result: cloneableAnalysis(analyze(CLEAN_TEXT)) })
-  })
-
-  it('returns the same site result as the main-thread analyser', () => {
-    const source: SiteSource = {
-      url: 'https://example.com/',
-      html: `<!doctype html><html><head><title>Probe</title></head><body>
-        <h1>Probe</h1><p>${exampleDraft}</p><a href="#">One</a>
-      </body></html>`,
-    }
-    const response = handleAnalysisRequest({ id: 9, kind: 'site', source })
-    expect(response).toEqual({
-      id: 9,
-      ok: true,
-      kind: 'site',
-      result: cloneableSiteAnalysis(analyzeSite(source)),
-    })
-    expect(() => structuredClone(response)).not.toThrow()
   })
 
   it('reports an analysis error as a response instead of throwing', () => {
@@ -467,8 +478,11 @@ describe('stage6: worker client', () => {
         <h1>Probe</h1><p>${exampleDraft}</p>
       </body></html>`,
     }
+    // Site analysis runs on the main thread, not in the worker
+    // (F2): the result is the direct analyser output, and the
+    // fake worker above was never asked for it.
     const site = await analyzeSiteAsync(source)
-    expect(site).toEqual(cloneableSiteAnalysis(analyzeSite(source)))
+    expect(site).toEqual(analyzeSite(source))
   })
 
   it('falls back to the main thread when the worker factory returns null', async () => {
@@ -559,11 +573,13 @@ describe.skipIf(!bundleExists)('stage6: CLI binary end to end', () => {
     const address = server.address()
     const port = typeof address === 'object' && address !== null ? address.port : 0
     try {
+      // The real CLI guards --url with the server's SSRF guard
+      // (F1): a loopback test server is refused, not scanned. The
+      // server listens on a random port, so the guard's port check
+      // fires first; either message names the block.
       const site = await spawnCli(['--url', `http://127.0.0.1:${port}/`])
-      expect(site.code).toBe(1)
-      const report = JSON.parse(site.stdout)
-      expect(report.kind).toBe('site')
-      expect(report.score).toBeLessThan(70)
+      expect(site.code).toBe(2)
+      expect(site.stderr).toContain('Only ports 80 and 443 are allowed.')
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
