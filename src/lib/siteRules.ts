@@ -932,13 +932,21 @@ const selectorClassTokens = (selector: string): string[] =>
   )
 
 const selectorTokenFallback = (group: string, domIndex: DomIndex): boolean => {
+  const trimmed = group.trim()
+  // :root, html, body and * always match: the document element
+  // exists. Anything else with no class, id, or type token it can
+  // check — a bare attribute selector, a lone pseudo-class — is
+  // unknown, and unknown does not count (F37): the old fallback
+  // returned true here, so `[data-label="a, b"]` counted as used on
+  // a page with no data-label attribute anywhere.
+  if (/^(?::root|html|body|\*)$/i.test(trimmed)) return true
   const classes = selectorClassTokens(group)
   const ids = Array.from(group.matchAll(/#([A-Za-z0-9_-]+)/g), (match) => match[1])
   const types = group
     .split(/[\s>+~]+/)
     .map((compound) => compound.match(/^[A-Za-z][A-Za-z0-9-]*/)?.[0].toLowerCase())
     .filter((type): type is string => type !== undefined)
-  if (classes.length === 0 && ids.length === 0 && types.length === 0) return true
+  if (classes.length === 0 && ids.length === 0 && types.length === 0) return false
   return (
     classes.every((token) => domIndex.classes.has(token)) &&
     ids.every((id) => domIndex.ids.has(id)) &&
@@ -946,14 +954,80 @@ const selectorTokenFallback = (group: string, domIndex: DomIndex): boolean => {
   )
 }
 
+// Whether every checkable token in the group occurs in the document
+// — the O(1) pre-check before a querySelector round trip (F37).
+// Only used for simple selectors: a group with `(` or `[` can hide
+// tokens inside a functional pseudo (:is(.a, .b) is an OR, not an
+// AND) or an attribute value, so those go through querySelector
+// and the fallback instead.
+const selectorTokensPossible = (group: string, domIndex: DomIndex): boolean => {
+  if (group.includes('(') || group.includes('[')) return true
+  return selectorTokenFallback(group, domIndex)
+}
+
+// Strip pseudo-classes and pseudo-elements, honouring nested
+// parentheses and quoted strings: `:not(.a:not(.b))` strips whole,
+// where the old regex left a dangling `)`. Attribute selectors and
+// quoted strings are copied verbatim, so a `:` inside them is not
+// mistaken for a pseudo-class.
+const stripPseudos = (selector: string): string => {
+  let out = ''
+  let i = 0
+  const n = selector.length
+  let bracketDepth = 0
+  while (i < n) {
+    const ch = selector[i]
+    if (ch === '"' || ch === "'") {
+      const end = skipCssString(selector, i)
+      out += selector.slice(i, end)
+      i = end
+      continue
+    }
+    if (ch === '[') bracketDepth++
+    else if (ch === ']') bracketDepth = Math.max(0, bracketDepth - 1)
+    if (ch === ':' && bracketDepth === 0) {
+      let j = i + 1
+      if (selector[j] === ':') j++
+      while (j < n && /[A-Za-z0-9_-]/.test(selector[j])) j++
+      if (selector[j] === '(') {
+        let depth = 0
+        while (j < n) {
+          const c = selector[j]
+          if (c === '"' || c === "'") {
+            j = skipCssString(selector, j)
+            continue
+          }
+          if (c === '(') depth++
+          else if (c === ')') {
+            depth--
+            j++
+            if (depth === 0) break
+            continue
+          }
+          j++
+        }
+      }
+      i = j
+      continue
+    }
+    out += ch
+    i++
+  }
+  return out
+}
+
 const isSelectorUsed = (doc: Document, parsed: ParsedCss, selector: string): boolean => {
   const cached = parsed.selectorUsedCache.get(selector)
   if (cached !== undefined) return cached
   const domIndex = parsed.domIndex ?? (parsed.domIndex = domIndexOf(doc))
   let used = false
-  for (const group of selector.split(',')) {
+  // Selector lists split on commas outside parentheses and quotes
+  // (F37): the old split(',') broke `:is(.a, .b)` and
+  // `[data-label="a, b"]` into invalid fragments.
+  for (const group of splitSelectorList(selector)) {
     const trimmed = group.trim()
     if (!trimmed) continue
+    if (!selectorTokensPossible(trimmed, domIndex)) continue
     try {
       if (doc.querySelector(trimmed)) {
         used = true
@@ -963,8 +1037,7 @@ const isSelectorUsed = (doc: Document, parsed: ParsedCss, selector: string): boo
       // The engine cannot evaluate this selector; fall through to the
       // stripped and token checks below.
     }
-    const stripped = trimmed
-      .replace(/::?[A-Za-z][\w-]*(\([^)]*\))?/g, '')
+    const stripped = stripPseudos(trimmed)
       .replace(/[\s>+~]+$/, '')
       .trim()
     if (stripped && stripped !== trimmed) {
