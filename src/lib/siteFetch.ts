@@ -45,3 +45,52 @@ export const pickFetchMode = (
     : proxyConsent === 'granted'
       ? 'proxy'
       : null
+
+// An error from /api/fetch or /api/css carrying the server's error
+// code, so the caller can tell a target problem from an endpoint
+// problem (F43). The code is the `error` field of the API's JSON
+// body — the same codes server/fetch.mjs and server/handlers.mjs
+// return.
+export const apiError = (message: string, code?: string): Error => {
+  const error = new Error(message)
+  if (code) (error as Error & { code?: string }).code = code
+  return error
+}
+
+export const errorCodeOf = (error: unknown): string | undefined =>
+  typeof error === 'object' && error !== null && 'code' in error
+    ? (error as { code?: unknown }).code as string | undefined
+    : undefined
+
+// Error codes the API returns for a target it correctly refused or
+// could not reach. The endpoint worked; the target is the problem —
+// so the UI must not mark the API as failed and offer the proxy for
+// them. Everything else (a network TypeError, a 404, a non-JSON
+// answer, `fetch-failed`, `forbidden-origin`) is the endpoint's own
+// failure. Gated on the code, not the HTTP status: /api/fetch maps
+// target refusals to 502, so a status list would still trip on a
+// target 403.
+export const TARGET_ERROR_CODES = new Set([
+  'missing-url',
+  'invalid-url',
+  'url-too-long',
+  'blocked-protocol',
+  'blocked-credentials',
+  'blocked-port',
+  'blocked-address',
+  'dns-failed',
+  'too-large',
+  'timeout',
+  'network-failed',
+  'http-error',
+  'blocked-by-site',
+  'not-html',
+  'not-css',
+  'bad-redirect',
+  'too-many-redirects',
+])
+
+export const isTargetError = (error: unknown): boolean => {
+  const code = errorCodeOf(error)
+  return code !== undefined && TARGET_ERROR_CODES.has(code)
+}
