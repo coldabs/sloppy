@@ -723,6 +723,8 @@ export const TESTIMONIAL_PHRASES = [
   'best purchase ever',
   'i wish i had found this sooner',
   'total game-changer',
+  'i love this product so much',
+  'best thing i have ever used',
 ]
 
 export const SUPERLATIVE_PHRASES = [

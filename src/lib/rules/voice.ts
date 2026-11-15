@@ -127,26 +127,55 @@ const emDash = (text: string): RawMatch[] => {
 
 // The "not just X, but Y" cadence is matched at sentence level, not
 // against a fixed character count. The old rule stopped at 48
-// characters, so a realistic long clause escaped it. The twist has to
-// sit in the same sentence as the setup: "Not just the speed. It's
-// about trust." is two sentences and does not count. One exception: a
-// twist on the next line still belongs to the setup when the setup
-// line ends with a comma — "Not just a tool,\nbut a partner." "Yet"
-// counts as a twist too: "Not just a tool, yet a whole new way of
-// working."
+// characters, so a realistic long clause escaped it. The twist usually
+// sits in the same sentence as the setup; a twist on the next line
+// still belongs to the setup when the setup line ends with a comma —
+// "Not just a tool,\nbut a partner." "Yet" counts as a twist too:
+// "Not just a tool, yet a whole new way of working."
+//
+// The twist can also open the next sentence — "This is not just a
+// tool. It is a whole new way of working." — but only when it
+// reframes rather than reports: the next sentence has to open with a
+// pronoun + is/are/was/were followed by an article or "more" ("It is
+// a whole new way", "It is more than a tool"). A twist that merely
+// reports ("It is blocking the release", "It is about trust") does
+// not count (F20, designed with F26).
+const NOT_JUST_SETUP = /\bnot\s+(?:just|only|merely)\b/i
+
+const CROSS_SENTENCE_TWIST =
+  /^\s*(?:it|this|that|they|he|she)\s+(?:is|are|was|were)\s+(?:a|an|the|more)\b/i
+
 const notJust = (text: string): RawMatch[] => {
-  const pattern = /\bnot\s+(?:just|only)\b[\s\S]*?\b(?:but|yet|it'?s|it\s+is)\b/gi
+  const pattern =
+    /\bnot\s+(?:just|only|merely)\b[\s\S]*?\b(?:but|yet|it'?s|it\s+is)\b/gi
   const matches: RawMatch[] = []
   const spans = sentenceSpans(text)
   for (let i = 0; i < spans.length; i += 1) {
     const sentence = spans[i]
     let body = text.slice(sentence.start, sentence.end)
-    if (/,\s*$/.test(body) && i + 1 < spans.length) {
+    const endsWithComma = /,\s*$/.test(body)
+    if (endsWithComma && i + 1 < spans.length) {
       body += '\n' + text.slice(spans[i + 1].start, spans[i + 1].end)
     }
     for (const match of body.matchAll(pattern)) {
       const start = sentence.start + (match.index ?? 0)
       matches.push({ start, end: start + match[0].length })
+    }
+    // Cross-sentence twist. The comma case above already covers a
+    // twist on the next line, so this pass only runs when the setup
+    // sentence ends with a full stop.
+    if (!endsWithComma && i + 1 < spans.length) {
+      const setup = NOT_JUST_SETUP.exec(body)
+      if (setup) {
+        const next = text.slice(spans[i + 1].start, spans[i + 1].end)
+        const twist = CROSS_SENTENCE_TWIST.exec(next)
+        if (twist) {
+          matches.push({
+            start: sentence.start + (setup.index ?? 0),
+            end: spans[i + 1].start + (twist.index ?? 0) + twist[0].length,
+          })
+        }
+      }
     }
   }
   return matches
@@ -697,7 +726,7 @@ export const voiceRules: RuleDefinition[] = [
     label: 'Not just X, but Y',
     group: 'voice',
     severity: 'low',
-    note: 'A stock cadence that promises a twist and then repeats itself. The twist has to sit in the same sentence, however long the clause is — or on the next line, when the setup line ends with a comma. "Yet" counts as a twist too.',
+    note: 'A stock cadence that promises a twist and then repeats itself. The twist sits in the same sentence, however long the clause is — or on the next line, when the setup line ends with a comma, or at the start of the next sentence, when it opens with a pronoun and reframes ("It is a whole new way of working"). A twist that merely reports ("It is blocking the release", "It is about trust") does not count. "Yet" counts as a twist too.',
     fix: 'State the claim once, directly.',
     scan: notJust,
   },
