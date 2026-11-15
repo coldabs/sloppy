@@ -453,7 +453,9 @@ const parseCssRules = (css: string): ParsedCssRule[] => {
       ) {
         // Print (and speech) styles are not what the visitor sees.
         if (atName === '@media' && /\b(?:print|speech)\b/i.test(selector)) continue
-        rules.push(...parseCssRules(body))
+        // Pushed one at a time, not spread: a large stylesheet can
+        // return more rules than a spread call can take (F5).
+        for (const rule of parseCssRules(body)) rules.push(rule)
       }
       // @keyframes, @font-face, @page and friends carry no element styles.
       continue

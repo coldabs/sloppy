@@ -132,14 +132,41 @@ export const peakWindowDensityFactor = (
   if (totalWords <= WINDOW_WORDS) {
     return densityFactor(matchOffsets.length, totalWords)
   }
+  // Matches sorted by start and by end, so the number overlapping a
+  // window is two binary searches instead of a scan of every match
+  // per window: O((windows + matches) log matches) rather than
+  // O(windows x matches), which was effectively quadratic on very
+  // large inputs (F5). A match overlaps [winStart, winEnd) when it
+  // starts before the window ends and ends after the window starts,
+  // so the count is (#starts < winEnd) - (#ends <= winStart).
+  const starts = matchOffsets.map((m) => m.start).sort((a, b) => a - b)
+  const ends = matchOffsets.map((m) => m.end).sort((a, b) => a - b)
+  const countLessThan = (sorted: readonly number[], value: number): number => {
+    let lo = 0
+    let hi = sorted.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (sorted[mid] < value) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+  const countAtMost = (sorted: readonly number[], value: number): number => {
+    let lo = 0
+    let hi = sorted.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (sorted[mid] <= value) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
   let maxHitsInWindow = 0
   for (let i = 0; i < totalWords; i += WINDOW_STEP_WORDS) {
     const winStart = spans[i].start
     const winEnd = spans[Math.min(totalWords - 1, i + WINDOW_WORDS - 1)].end
-    let hits = 0
-    for (const match of matchOffsets) {
-      if (match.start < winEnd && match.end > winStart) hits += 1
-    }
+    const hits =
+      countLessThan(starts, winEnd) - countAtMost(ends, winStart)
     if (hits > maxHitsInWindow) maxHitsInWindow = hits
   }
   return densityFactor(maxHitsInWindow, WINDOW_WORDS)
@@ -458,7 +485,9 @@ export const analyze = (text: string): Analysis => {
       }
     })
 
-    findings.push(...ruleFindings)
+    // Pushed one at a time, not spread: spreading a very long
+    // draft's findings into push() overflows the call stack (F5).
+    for (const finding of ruleFindings) findings.push(finding)
     groupMap.set(rule.id, { rule, hits: ruleFindings })
   }
 

@@ -22,6 +22,11 @@ import { analyzeSite, type SiteAnalysis, type SiteSource } from './siteAnalyzer'
 
 export const DEFAULT_THRESHOLD = 70
 export const MAX_STYLESHEETS = 5
+// The largest copy draft the CLI will scan, in bytes — the same 8 MB
+// cap the server puts on a fetched page (F5). A larger draft is
+// refused rather than scanned: the windowed density loop used to be
+// effectively quadratic, and an 8.9 MB draft never finished.
+export const MAX_CLI_INPUT_BYTES = 8 * 1024 * 1024
 // The CLI prints the version from package.json when it runs; this
 // fallback is only for tests and for a bundle run without it.
 export const CLI_VERSION_FALLBACK = '0.2.0'
@@ -426,6 +431,11 @@ export const runCli = async (
       } else {
         throw new CliError(
           'Nothing to scan. Pass a file, --url, or pipe text on stdin.',
+        )
+      }
+      if (Buffer.byteLength(text, 'utf8') > MAX_CLI_INPUT_BYTES) {
+        throw new CliError(
+          `That draft is larger than ${MAX_CLI_INPUT_BYTES / 1024 / 1024} MB. Split it and scan the parts.`,
         )
       }
       const analysis = analyze(text)
