@@ -1,6 +1,7 @@
 // @vitest-environment node
+import { createServer, type Server } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import { FetchError, isPrivateAddress, validateTarget } from './fetch.mjs'
+import { FetchError, fetchPage, isPrivateAddress, validateTarget } from './fetch.mjs'
 
 const rejection = async (input: string, options?: { allowPrivate?: boolean }) => {
   try {
@@ -158,4 +159,79 @@ describe('validateTarget', () => {  it('rejects non-http protocols', async () =>
   it('rejects empty input', async () => {
     expect(await rejection('   ')).toBe('missing-url')
   })
+
+  it('rejects decimal, octal, and hex loopback literals', async () => {
+    // The WHATWG URL parser normalises all three spellings to
+    // 127.0.0.1, so they are refused as blocked-address — the same
+    // literals the browser-side guard used to let through (F9).
+    expect(await rejection('http://2130706433/')).toBe('blocked-address')
+    expect(await rejection('http://0177.0.0.1/')).toBe('blocked-address')
+    expect(await rejection('http://0x7f.0.0.1/')).toBe('blocked-address')
+    expect(await rejection('http://0x7f000001/')).toBe('blocked-address')
+  })
+
+  it('rejects the exact cloud-metadata address', async () => {
+    expect(await rejection('http://169.254.169.254/')).toBe('blocked-address')
+  })
+})
+
+// F10: a local server for the redirect and timeout cases. The
+// server listens on loopback, so tests pass allowPrivate — the
+// point is what happens after the first hop, not the first hop.
+const withServer = async (
+  handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void,
+  run: (base: string) => Promise<void>,
+): Promise<void> => {
+  const server: Server = createServer(handler)
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  const port = typeof address === 'object' && address !== null ? address.port : 0
+  try {
+    await run(`http://127.0.0.1:${port}`)
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+}
+
+describe('fetchPage redirects and timeout', () => {
+  it('re-validates every redirect hop', async () => {
+    // A redirect to a non-http protocol is refused even with
+    // allowPrivate: the hop goes through resolveTarget again, so a
+    // redirect cannot hop somewhere the direct URL could not go.
+    // (A redirect to a non-80/443 port is refused by the same
+    // re-validation — the direct-URL port test above covers that
+    // branch — but it cannot be driven end to end here: with
+    // allowPrivate off, the loopback origin itself is refused
+    // before any redirect, and this sandbox has no public origin.)
+    await withServer((_req, res) => {
+      res.writeHead(302, { location: 'ftp://example.com/file' })
+      res.end()
+    }, async (base) => {
+      await expect(fetchPage(`${base}/`, { allowPrivate: true })).rejects.toMatchObject({
+        code: 'blocked-protocol',
+      })
+    })
+    await withServer((_req, res) => {
+      res.writeHead(302, { location: 'http://user:pass@127.0.0.1:8080/' })
+      res.end()
+    }, async (base) => {
+      await expect(fetchPage(`${base}/`, { allowPrivate: true })).rejects.toMatchObject({
+        code: 'blocked-credentials',
+      })
+    })
+  })
+
+  it('times out an idle socket after 10 s', async () => {
+    // The server accepts the connection and never answers: the
+    // request socket timeout (req.setTimeout(10000)) must fire
+    // instead of hanging.
+    await withServer((_req, _res) => {
+      // Never respond; hold the socket open.
+    }, async (base) => {
+      await expect(fetchPage(`${base}/`, { allowPrivate: true })).rejects.toMatchObject({
+        status: 504,
+        code: 'timeout',
+      })
+    })
+  }, 30_000)
 })
