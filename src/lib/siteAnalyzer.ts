@@ -3,6 +3,7 @@ import {
   scoreFromPenalty,
   verdictFor,
   type Analysis,
+  type AnalyzeOptions,
   type SeverityCounts,
 } from './analyzer'
 import {
@@ -93,11 +94,14 @@ const sortGroups = (groups: SiteFindingGroup[]) =>
       a.rule.label.localeCompare(b.rule.label),
   )
 
-export const analyzeSite = ({ url, html, stylesheets = [] }: SiteSource): SiteAnalysis => {
+export const analyzeSite = (
+  { url, html, stylesheets = [] }: SiteSource,
+  opts: AnalyzeOptions = {},
+): SiteAnalysis => {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const fullText = extractPageText(doc)
   const text = fullText.slice(0, SITE_TEXT_LIMIT)
-  const copy = analyze(text)
+  const copy = analyze(text, { enabledRuleIds: opts.enabledRuleIds })
   const css = stripCssComments([collectCss(doc), ...stylesheets].join('\n'))
   const context = { doc, css, text, url }
 
