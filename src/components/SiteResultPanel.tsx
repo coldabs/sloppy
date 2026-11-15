@@ -31,9 +31,14 @@ const siteItems = (groups: SiteFindingGroup[], kind: string): FindingListItem[] 
     excerpt: hits[0].excerpt,
     count: occurrences,
     countLabel: occurrences === 1 ? 'occurrence' : 'occurrences',
+    // The "more" count is the true occurrence count, not the number
+    // of hits shown: the display list is sliced at 400/400/300, so
+    // 500 dead links show 400 hits but 499 more occurrences than the
+    // one excerpt above. When nothing is sliced the two agree, so
+    // short lists read exactly as before.
     more:
-      hits.length > 1
-        ? `Plus ${hits.length - 1} more ${kind} in the page.`
+      occurrences > 1
+        ? `Plus ${occurrences - 1} more ${kind} in the page.`
         : undefined,
   }))
 

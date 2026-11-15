@@ -1,18 +1,21 @@
 import { IconFlask } from '@tabler/icons-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { analyzeSite, type SiteAnalysis } from '../lib/siteAnalyzer'
+import { analyzeSiteAsync } from '../lib/analysisClient'
+import type { SiteAnalysis } from '../lib/siteAnalyzer'
+import {
+  pickFetchMode,
+  proxyUrl,
+  resolveBaseUrl,
+  type ApiState,
+  type FetchMode,
+  type ProxyConsent,
+} from '../lib/siteFetch'
 import { isPrivateHost, normaliseUrl } from '../lib/target'
 import { SiteResultPanel, type SiteStatus } from './SiteResultPanel'
 
 const MAX_STYLESHEETS = 5
 const PROXY_STYLESHEETS = 3
-const PROXY_PREFIX = 'https://proxy.corsfix.com/?'
 const CONSENT_KEY = 'sloppy:proxy-consent'
-
-type FetchMode = 'api' | 'proxy'
-type ProxyConsent = 'unknown' | 'granted' | 'denied'
-
-const proxyUrl = (target: string) => `${PROXY_PREFIX}${target}`
 
 const readConsent = (): ProxyConsent => {
   try {
@@ -63,8 +66,7 @@ const fetchStylesheets = async (
 ) => {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const page = new URL(pageUrl)
-  const baseHref = doc.querySelector('base[href]')?.getAttribute('href')
-  const base = baseHref ? new URL(baseHref, page) : page
+  const base = resolveBaseUrl(doc, pageUrl)
   const candidates: string[] = []
 
   for (const link of doc.querySelectorAll('link[href]')) {
@@ -113,8 +115,6 @@ const fetchStylesheets = async (
   )
 }
 
-type ApiState = 'checking' | 'ok' | 'missing'
-
 export function SiteChecker() {
   const [url, setUrl] = useState('')
   const [status, setStatus] = useState<SiteStatus>('idle')
@@ -122,6 +122,7 @@ export function SiteChecker() {
   const [targetUrl, setTargetUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [apiState, setApiState] = useState<ApiState>('checking')
+  const [apiFailed, setApiFailed] = useState(false)
   const [proxyConsent, setProxyConsent] = useState<ProxyConsent>(readConsent)
   const request = useRef<AbortController | null>(null)
 
@@ -155,9 +156,13 @@ export function SiteChecker() {
     setError(null)
   }
 
+  const retryApi = () => {
+    setApiFailed(false)
+    setError(null)
+  }
+
   const scan = async (target: string, demo = false) => {
-    const mode: FetchMode | null =
-      apiState === 'ok' ? 'api' : proxyConsent === 'granted' ? 'proxy' : null
+    const mode = demo ? null : pickFetchMode(apiState, apiFailed, proxyConsent)
 
     if (!demo && !mode) {
       setAnalysis(null)
@@ -244,12 +249,19 @@ export function SiteChecker() {
       }
 
       setStatus('analyzing')
-      const result = analyzeSite({ url: pageUrl, html, stylesheets })
+      // The analysis runs in a Web Worker (main-thread fallback if
+      // Workers are unavailable), so a long page never blocks the UI
+      // while it is read.
+      const result = await analyzeSiteAsync({ url: pageUrl, html, stylesheets })
       setAnalysis(result)
       setTargetUrl(pageUrl)
       setStatus('done')
     } catch (caught) {
       if (controller.signal.aborted) return
+      // The API answered health on mount but the fetch itself failed
+      // (timeout, rate-limit, endpoint down). Offer the proxy fallback
+      // instead of leaving the user stuck on a dead route.
+      if (mode === 'api') setApiFailed(true)
       setStatus('error')
       setError(
         caught instanceof DOMException && caught.name === 'TimeoutError'
@@ -290,11 +302,13 @@ export function SiteChecker() {
       return
     }
 
-    if (apiState === 'missing' && proxyConsent !== 'granted') {
+    if ((apiState === 'missing' || apiFailed) && proxyConsent !== 'granted') {
       setAnalysis(null)
       setStatus('error')
       setError(
-        'This static host has no fetch API. Choose whether to use the public proxy above, or run the app locally.',
+        apiFailed
+          ? 'The fetch API failed. Choose whether to use the public proxy above, or try the API again.'
+          : 'This static host has no fetch API. Choose whether to use the public proxy above, or run the app locally.',
       )
       return
     }
@@ -342,6 +356,35 @@ export function SiteChecker() {
           to that service.
           <button className="text-button" type="button" onClick={denyProxy}>
             Turn off
+          </button>
+        </p>
+      ) : null}
+      {apiFailed && proxyConsent !== 'granted' ? (
+        <section className="proxy-consent" aria-labelledby="proxy-fallback-title">
+          <h3 id="proxy-fallback-title">The fetch API failed</h3>
+          <p>
+            The server fetch did not work, so live scans can fall back to a
+            public CORS proxy operated by{' '}
+            <a href="https://corsfix.com" target="_blank" rel="noreferrer noopener">
+              corsfix.com
+            </a>
+            . The page URL is sent to that service.
+          </p>
+          <div className="proxy-consent__actions">
+            <button className="button button--primary" type="button" onClick={grantProxy}>
+              Use the public proxy
+            </button>
+            <button className="text-button" type="button" onClick={retryApi}>
+              Try the API again
+            </button>
+          </div>
+        </section>
+      ) : apiFailed && proxyConsent === 'granted' ? (
+        <p className="api-status api-status--proxy" role="status">
+          The fetch API failed, so live scans use the public proxy at
+          corsfix.com. The page URL is sent to that service.
+          <button className="text-button" type="button" onClick={retryApi}>
+            Try the API again
           </button>
         </p>
       ) : null}

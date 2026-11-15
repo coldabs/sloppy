@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { analyze, type Analysis } from '../lib/analyzer'
+import { analyzeCopyAsync } from '../lib/analysisClient'
+import type { Analysis } from '../lib/analyzer'
 import { exampleDraft } from '../lib/exampleDraft'
 import { ResultPanel } from './ResultPanel'
 
@@ -21,6 +22,10 @@ export function CopyChecker() {
   const [error, setError] = useState<string | null>(null)
   const [scanId, setScanId] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  // A scan is async now (worker, with a main-thread fallback), so a
+  // second scan can finish before the first: only the latest token
+  // may set the result.
+  const scanToken = useRef(0)
 
   const runScan = () => {
     if (text.trim().length === 0) {
@@ -39,14 +44,27 @@ export function CopyChecker() {
       return
     }
 
-    // The scan itself takes a few milliseconds at the 20,000-character
-    // limit, so there is no artificial delay: the result appears as
-    // soon as it is computed.
+    // The scan runs in a Web Worker (main-thread fallback if
+    // Workers are unavailable), so a long draft never blocks typing
+    // or the rest of the page while it is read.
     setError(null)
     setScannedText(text)
-    setAnalysis(analyze(text))
     setScanId((value) => value + 1)
-    setStatus('done')
+    setStatus('analyzing')
+    const token = ++scanToken.current
+    void analyzeCopyAsync(text).then(
+      (result) => {
+        if (scanToken.current !== token) return
+        setAnalysis(result)
+        setStatus('done')
+      },
+      () => {
+        if (scanToken.current !== token) return
+        setAnalysis(null)
+        setStatus('error')
+        setError('The scan failed. Try again.')
+      },
+    )
   }
 
   const loadExample = () => {
