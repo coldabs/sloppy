@@ -1,6 +1,5 @@
 {
   "name": "sloppy",
-  "private": true,
   "version": "0.2.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -10,6 +9,10 @@
   "bin": {
     "sloppy": "./bin/sloppy.mjs"
   },
+  "files": [
+    "bin",
+    "dist"
+  ],
   "scripts": {
     "dev": "node server.mjs --dev",
     "build": "tsc -b && vite build && node scripts/build-cli.mjs",
