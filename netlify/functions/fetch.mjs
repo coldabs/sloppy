@@ -1,4 +1,4 @@
-import { FetchError, fetchPage } from '../../server/fetch.mjs'
+import { handleFetchPage } from '../../server/handlers.mjs'
 
 const send = (statusCode, payload) => ({
   statusCode,
@@ -20,28 +20,9 @@ const queryValue = (event, name) => {
 }
 
 export const handler = async (event) => {
-  if (event.httpMethod !== 'GET') {
-    return send(405, { error: 'method-not-allowed', message: 'Use GET.' })
-  }
-
-  const target = queryValue(event, 'url')
-  if (!target) {
-    return send(400, { error: 'missing-url', message: 'Enter a page URL to scan.' })
-  }
-  if (target.length > 2048) {
-    return send(414, { error: 'url-too-long', message: 'That URL is too long.' })
-  }
-
-  try {
-    const page = await fetchPage(target, { allowPrivate: false })
-    return send(200, page)
-  } catch (error) {
-    if (error instanceof FetchError) {
-      return send(error.status, { error: error.code, message: error.message })
-    }
-    return send(502, {
-      error: 'fetch-failed',
-      message: 'The page could not be fetched.',
-    })
-  }
+  const { status, payload } = await handleFetchPage(
+    event.httpMethod,
+    queryValue(event, 'url'),
+  )
+  return send(status, payload)
 }

@@ -1,18 +1,13 @@
-export const handler = async (event) => {
-  if (event.httpMethod !== 'GET') {
-    return {
-      statusCode: 405,
-      headers: { 'content-type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ error: 'method-not-allowed', message: 'Use GET.' }),
-    }
-  }
+import { handleHealth } from '../../server/handlers.mjs'
 
+export const handler = async (event) => {
+  const { status, payload } = handleHealth(event.httpMethod, 'netlify')
   return {
-    statusCode: 200,
+    statusCode: status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
     },
-    body: JSON.stringify({ ok: true, mode: 'netlify' }),
+    body: JSON.stringify(payload),
   }
 }
