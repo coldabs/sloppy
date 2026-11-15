@@ -1,4 +1,5 @@
 import { handleFetchPage } from '../../server/handlers.mjs'
+import { clientIpFromHeaders } from '../../server/rateLimit.mjs'
 
 const send = (statusCode, payload) => ({
   statusCode,
@@ -23,6 +24,7 @@ export const handler = async (event) => {
   const { status, payload } = await handleFetchPage(
     event.httpMethod,
     queryValue(event, 'url'),
+    { ip: clientIpFromHeaders(event.headers) },
   )
   return send(status, payload)
 }
