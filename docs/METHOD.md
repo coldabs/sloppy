@@ -359,7 +359,12 @@ of the same sizes.
   advancements, aligns, boasts, comprehending, delve(d/s/ving),
   emphasizing, garnered, groundbreaking, intricacies, intricate,
   realm, showcases, showcasing, surpasses, surpassing, underscore(s),
-  underscoring. The buzzword list adds corporate verb inflation
+  underscoring. Checked against real marketing copy in a 10-page pilot
+  (`bench/FOCAL_WORDS.md`, 2026-11-15), the focal words are essentially
+  absent from both clean and slop marketing pages — one occurrence in
+  ~19,600 words — so they carry no signal in that register; the rule's
+  marketing coverage comes from the other ai-tell phrases, not the
+  focal words. The buzzword list adds corporate verb inflation
   (revolutionize, turbocharge, future-proof, top-tier, skyrocket)
   with a clean/slop test for each term. The vocabulary union is 215
   distinct terms; the cliche union is 129 distinct phrases. Every
