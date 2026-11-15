@@ -19,6 +19,8 @@ import { fetchCss, fetchPage, FetchError } from '../../server/fetch.mjs'
 import { analyze, type Analysis } from './analyzer'
 import { copyToSarif, siteToSarif, type SarifLog } from './sarif'
 import { analyzeSite, type SiteAnalysis, type SiteSource } from './siteAnalyzer'
+import demoHtml from '../../public/demo-site/index.html?raw'
+import demoCss from '../../public/demo-site/styles.css?raw'
 
 export const DEFAULT_THRESHOLD = 70
 export const MAX_STYLESHEETS = 5
@@ -47,6 +49,7 @@ Options:
   --file <path>                 text file to scan (same as the positional file)
   --url <url>                   public http(s) page to scan
   --stdin                       read the draft from stdin
+  --demo                        scan the bundled demo site (public/demo-site)
   --format <json|sarif>         output format (default json)
   --sarif                       shorthand for --format sarif
   --threshold <0-100>           exit 1 when the score is below this (default 70)
@@ -66,6 +69,7 @@ export type CliInput =
   | { kind: 'file'; path: string }
   | { kind: 'stdin' }
   | { kind: 'url'; url: string }
+  | { kind: 'demo' }
 
 export interface CliOptions {
   input: CliInput | null
@@ -74,6 +78,19 @@ export interface CliOptions {
   help: boolean
   version: boolean
 }
+
+// The bundled demo site (F12): the same fixture the Website panel
+// scans from its "Try the demo" button. It is imported as raw text,
+// so it ships inside the CLI bundle and is always available — no
+// filesystem path to resolve, and no network. A file:// target
+// stays refused; --demo is the one blessed way to scan local files
+// as a site.
+
+const loadDemoSource = (): SiteSource => ({
+  url: 'demo-site/index.html',
+  html: demoHtml,
+  stylesheets: [demoCss],
+})
 
 // How a website scan gets its HTML and CSS. Tests inject a fake
 // fetcher so the CLI's URL path can be exercised against a local
@@ -153,6 +170,7 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
   let file: string | null = null
   let url: string | null = null
   let stdin = false
+  let demo = false
   let format: 'json' | 'sarif' = 'json'
   let threshold = DEFAULT_THRESHOLD
   let help = false
@@ -182,6 +200,7 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
       if (flag === '--help') help = true
       else if (flag === '--version') version = true
       else if (flag === '--stdin') stdin = true
+      else if (flag === '--demo') demo = true
       else if (flag === '--sarif') format = 'sarif'
       else if (flag === '--file') {
         if (file !== null) throw new CliError('Pass only one input file.')
@@ -222,9 +241,9 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
     file = arg
   }
 
-  const inputs = [file !== null, url !== null, stdin].filter(Boolean).length
+  const inputs = [file !== null, url !== null, stdin, demo].filter(Boolean).length
   if (inputs > 1) {
-    throw new CliError('Pass one input: a file, --url, or --stdin.')
+    throw new CliError('Pass one input: a file, --url, --demo, or --stdin.')
   }
   if (url !== null) {
     let parsed: URL
@@ -244,9 +263,11 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
         ? { kind: 'url', url }
         : file !== null
           ? { kind: 'file', path: file }
-          : stdin
-            ? { kind: 'stdin' }
-            : null,
+          : demo
+            ? { kind: 'demo' }
+            : stdin
+              ? { kind: 'stdin' }
+              : null,
     format,
     threshold,
     help,
@@ -416,6 +437,13 @@ export const runCli = async (
     if (options.input?.kind === 'url') {
       const source = await fetchSiteSource(options.input.url, io.fetchSite)
       const site = analyzeSite(source)
+      score = site.score
+      output =
+        options.format === 'sarif'
+          ? JSON.stringify(siteToSarif(site, version), null, 2)
+          : JSON.stringify(siteJsonReport(site, version), null, 2)
+    } else if (options.input?.kind === 'demo') {
+      const site = analyzeSite(loadDemoSource())
       score = site.score
       output =
         options.format === 'sarif'
