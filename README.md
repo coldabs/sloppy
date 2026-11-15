@@ -400,7 +400,7 @@ and does not report the final URL after redirects, so relative assets can miss.
 
 ## Accessibility
 
-The page targets WCAG AA contrast, uses native buttons and links, keeps
+The page is built for strong contrast, uses native buttons and links, keeps
 visible focus rings, supports keyboard tabs and filtering, labels the scan
 regions with live status roles, and respects `prefers-reduced-motion`.
 
