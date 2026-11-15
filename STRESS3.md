@@ -10,10 +10,11 @@
 
 - **124 scored probes** (30 evasion, 36 false positives, 43 false negatives, 15 edge cases) + **10 performance probes** = 134 probes total.
 - Evasion: all 9 normalisation evasions caught (zero-width, Cyrillic, small caps, split, period, underscore, accented, hyphen-split). Citation logic held on every probe.
-- False positives: 18 of 36 clean-human-text probes scored below 90, including ordinary academic prose at **54** and a news earnings sentence at **63**.
-- False negatives: 31 of 43 slop probes scored a clean **100** — every paraphrase probe (15/15) and every exact-threshold probe (14/14) had its focus rule silent.
+- False positives: 1 of 36 clean-human-text probes scored below 90 (B20, "Best day ever!!!", at **67** — a 3-word draft judged against the 8-word floor).
+- False negatives: 14 of 43 slop probes scored a clean **100** — all exact-threshold probes whose focus rule stays silent (C12, C14–C18, C24, C26, C34–C37, C41, C42). No paraphrase probe still scores 100 (0/15; C28 now scores 53). One more slop probe sits at 90–99 (C22 at 94).
 - Performance: worst probe **61.4 ms** (300 evidence links with numbers); 100k-char draft **45.6 ms**. No ReDoS pattern found.
-- Inventory check: distinct tiered vocabulary measures **152**, not the briefed 153. Distinct clichés measure **123**, as claimed.
+- Inventory check: distinct tiered vocabulary measures **215**, not the briefed 153. Distinct clichés measure **131**.
+- Header figures re-measured 2026-11-15 on the current engine; the probe table below is the P2 record, with the addenda tracking later runs.
 
 ## Full probe table
 
