@@ -58,14 +58,18 @@ const pseudoWisdom = (text: string): RawMatch[] => {
 }
 
 // A paragraph is substantive when it carries at least one concrete
-// fact: a name, a number with context, or a cause tied to an
-// outcome. A date alone is not a fact — "In January, everything
-// changes" says nothing specific — and neither is a cause on its
-// own: "because it helps teams" is a claim, not a fact. A number
-// only counts when it is not an unsourced boast: "10,000 happy
-// users" is the claim being checked, not evidence for the
-// paragraph. Fires only when more than half of the paragraphs in
-// a text of at least three paragraphs and 80 words fail the test.
+// fact: a number with context, or a cause tied to an outcome. A date
+// alone is not a fact — "In January, everything changes" says nothing
+// specific — and neither is a cause on its own: "because it helps
+// teams" is a claim, not a fact. A number only counts when it is not
+// an unsourced boast: "10,000 happy users" is the claim being
+// checked, not evidence for the paragraph. A bare capitalised word
+// is not a fact on its own (F24): any word can be capitalised
+// mid-sentence — "Founders", "Seamless", "Next-Gen" — so a name only
+// counts alongside a number or a cause, the way a cause already
+// needs a number or a name in its sentence. Fires only when more
+// than half of the paragraphs in a text of at least three paragraphs
+// and 80 words fail the test.
 const CAUSE_OR_TRADEOFF =
   /\b(?:because|since|due to|instead of|rather than|compared to|compared with|versus|trade-?off|in exchange for)\b/i
 
@@ -102,11 +106,13 @@ const paragraphHasConcreteFact = (
     }
     return false
   }
-  if (hasName(paragraph)) return true
   // A cause or trade-off only counts when it is tied to an outcome:
   // the same sentence has to carry a number or a name. "Because it
   // helps teams" is a claim; "because latency fell from 400ms to
-  // 90ms" is a fact.
+  // 90ms" is a fact; "because Ana rewrote the queue" is a fact too,
+  // because the name makes the cause concrete. A bare capitalised
+  // word on its own is not a fact (F24) — it only counts here, as
+  // the companion to a cause.
   const sentences = sentenceSpans(paragraph)
   for (const sentence of sentences) {
     const body = paragraph.slice(sentence.start, sentence.end)
@@ -155,7 +161,7 @@ export const substanceRules: RuleDefinition[] = [
     label: 'Substance-poor paragraphs',
     group: 'substance',
     severity: 'medium',
-    note: 'More than half of the paragraphs carry no concrete fact — no name, no number with context, no cause tied to an outcome. A date alone does not count, and neither does a cause on its own: "In January, everything changes" and "because it helps teams" say nothing specific. A bare boastful number does not count as a fact: 99.9% uptime is the claim being checked, not evidence. Needs at least three paragraphs of at least 10 words each, and 80 words in total.',
+    note: 'More than half of the paragraphs carry no concrete fact — no number with context, no cause tied to an outcome. A name on its own does not count: any word can be capitalised mid-sentence ("Founders", "Seamless"), so a bare capitalised word needs a number or a cause beside it. A date alone does not count, and neither does a cause on its own: "In January, everything changes" and "because it helps teams" say nothing specific. A bare boastful number does not count as a fact: 99.9% uptime is the claim being checked, not evidence. Needs at least three paragraphs of at least 10 words each, and 80 words in total.',
     fix: 'Give each paragraph one concrete thing: a name, a date, a sourced number, a cause.',
     scan: thinSubstance,
   },
