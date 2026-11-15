@@ -349,6 +349,51 @@ of the same sizes.
   the phrases are. A dash that opens a line of dialogue is not
   counted as a pause in any language. A non-English corpus is not part of this release.
 
+## Scoring constants
+
+The severity weights (high 15, medium 9, low 4), the decay
+constant (55), the density saturation (10), the window blend
+(0.15 global / 0.85 peak), the adaptive floor (own length, minimum
+8, cap 50), and the co-occurrence boost (25%) were measured
+against the labelled benchmark corpus (`bench/corpus.jsonl`) in
+November 2026, by sweeping each constant and recording the
+dev/test precision and recall and the grey-zone agreement
+(`bench/CALIBRATION.md` has the full table and the method). The
+discriminating metric is the grey zone, not the binary
+precision/recall: binary precision/recall stay at 100% over wide
+ranges of every constant, so they cannot tell a good constant from
+a bad one, while the eight grey entries sit near the 70–89 band
+edges and move when a constant changes.
+
+Three constants are pinned by the corpus — each has exactly one
+swept value that keeps all eight grey entries in band, bracketed
+on both sides by values that push entries out: the low weight 4
+(at 2, B10/C11/C23 escape upward to 92–94; at 5, C06/C07/C20/C27
+fall to 65–69), the decay 55 (at 45, C06/C07/C27 fall to 65–69;
+at 65, C11 escapes to 91), and the density saturation 10 (at 5,
+C11 escapes to 90; at 20, C06/C07/C20/C27 fall to 63–69). The
+window blend is constrained to peak-heavy (0.75–1.0 keeps 8/8;
+0.5–0.65 loses one), and 0.85 sits in the middle of that flat
+region. The rest are design choices the corpus cannot
+distinguish: high (10–25) and medium (6–15) all keep the
+benchmark green, so 15 and 9 are kept for the ordering they
+encode; the floor cap (25–100) and the co-occurrence multiplier
+(1.0–2.0, including no boost at all) likewise. The minimum
+scoreable length 8 is the F21 value, and it is the largest value
+that keeps every grey entry scorable (C27, at 11 words, is the
+binding case).
+
+The honest limit: the corpus labels were pinned from the scorer's
+own output at these constants, so the sweep measures each
+constant's margin — how far it can move before a pinned
+expectation breaks — not an independent validation. An
+independent held-out set (real LLM output vs real human text,
+labelled outside this repo) is still missing; with one, the
+sweep could be re-run against labels the scorer did not produce.
+The grey-zone gate in `bench/bench.test.ts` keeps the
+calibration in CI: a constant change that pushes a grey entry out
+of its band fails the bench.
+
 ## Limits
 
 - The list is fixed. A phrase that is not on it scores nothing, however
