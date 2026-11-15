@@ -20,6 +20,7 @@ import { handler as cssHandler } from '../netlify/functions/css.mjs'
 import { handler as fetchHandler } from '../netlify/functions/fetch.mjs'
 import { handler as healthHandler } from '../netlify/functions/health.mjs'
 import { FetchError, fetchCss, fetchPage } from '../server/fetch.mjs'
+import { resetFetchEndpointState } from '../server/handlers.mjs'
 
 const pageMock = vi.mocked(fetchPage)
 const cssMock = vi.mocked(fetchCss)
@@ -35,6 +36,7 @@ const parse = (result) => JSON.parse(result.body)
 beforeEach(() => {
   pageMock.mockReset()
   cssMock.mockReset()
+  resetFetchEndpointState()
 })
 
 describe('Netlify page fetch function', () => {

@@ -24,6 +24,7 @@ import {
   fetchCss,
   fetchPage,
 } from '../server/fetch.mjs'
+import { resetFetchEndpointState } from '../server/handlers.mjs'
 
 const pageMock = vi.mocked(fetchPage)
 const cssMock = vi.mocked(fetchCss)
@@ -56,6 +57,7 @@ const call = async (handler, request) => {
 beforeEach(() => {
   pageMock.mockReset()
   cssMock.mockReset()
+  resetFetchEndpointState()
 })
 
 describe('Vercel health handler', () => {
