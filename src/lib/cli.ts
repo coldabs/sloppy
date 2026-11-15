@@ -17,6 +17,7 @@
 import { readFile } from 'node:fs/promises'
 import { fetchCss, fetchPage, FetchError } from '../../server/fetch.mjs'
 import { analyze, type Analysis } from './analyzer'
+import { rules } from './rules'
 import { copyToSarif, siteToSarif, type SarifLog } from './sarif'
 import { analyzeSite, type SiteAnalysis, type SiteSource } from './siteAnalyzer'
 import demoHtml from '../../public/demo-site/index.html?raw'
@@ -41,6 +42,7 @@ export const USAGE = `sloppy — a local pattern checker for machine-made copy a
 
 Usage:
   sloppy [options] [file]       scan a text file (or pass no file to read stdin)
+  sloppy check [options] [file] the same scan, as an explicit subcommand
   sloppy --url <url>            scan a public website
   sloppy --stdin                read the draft from stdin
   cat draft.txt | sloppy        stdin is read when it is piped
@@ -51,15 +53,25 @@ Options:
   --stdin                       read the draft from stdin
   --demo                        scan the bundled demo site (public/demo-site)
   --format <json|sarif>         output format (default json)
+  --json                        shorthand for --format json
   --sarif                       shorthand for --format sarif
   --threshold <0-100>           exit 1 when the score is below this (default 70)
   --help, -h                    show this help
   --version, -V                 print the version
 
+Configuration:
+  sloppy.config.json in the directory you run from sets defaults:
+  { "rules": ["unsourced-number", "buzzwords"], "threshold": 90 }
+  rules is the list of copy rule ids to run (the full list is in
+  docs/METHOD.md); threshold is the passing score. A --threshold flag
+  wins over the config file. In a website scan the rules list filters
+  the copy findings only — the structure and style rules always run.
+
 Exit codes: 0 score met the threshold, 1 score below it, 2 usage, fetch error, or page not readable.
 
 Examples:
   sloppy draft.txt
+  sloppy check draft.txt --json
   sloppy --url https://example.com --format sarif > report.sarif
   sloppy --threshold 90 --sarif draft.txt`
 
@@ -75,8 +87,86 @@ export interface CliOptions {
   input: CliInput | null
   format: 'json' | 'sarif'
   threshold: number
+  // True when --threshold was passed on the command line: a flag
+  // wins over the config file's threshold (F60), so the parser has
+  // to say whether the value came from a flag or the default.
+  thresholdSet: boolean
   help: boolean
   version: boolean
+}
+
+// The config file (F60): sloppy.config.json in the directory the
+// command runs from. It accepts exactly two keys, the two the
+// technical-docs probe text always advertised: `rules`, a list of
+// copy rule ids to enable, and `threshold`, the minimum score that
+// passes the check. Anything else — bad JSON, a non-object, an
+// unknown key, an unknown rule id, a threshold outside 0–100 — is
+// a usage error, never a silent ignore: a config that quietly did
+// nothing would be worse than no config at all.
+export const CONFIG_FILE_NAME = 'sloppy.config.json'
+
+export interface SloppyConfig {
+  rules?: string[]
+  threshold?: number
+}
+
+const KNOWN_RULE_IDS = new Set(rules.map((rule) => rule.id))
+
+export const parseSloppyConfig = (raw: string): SloppyConfig => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new CliError(`${CONFIG_FILE_NAME} is not valid JSON.`)
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new CliError(`${CONFIG_FILE_NAME} must be a JSON object.`)
+  }
+  const record = parsed as Record<string, unknown>
+  const unknownKeys = Object.keys(record).filter(
+    (key) => key !== 'rules' && key !== 'threshold',
+  )
+  if (unknownKeys.length > 0) {
+    throw new CliError(
+      `${CONFIG_FILE_NAME} has unknown key(s): ${unknownKeys.join(', ')}. Only rules and threshold are accepted.`,
+    )
+  }
+  const config: SloppyConfig = {}
+  if (record.threshold !== undefined) {
+    const value = record.threshold
+    if (
+      typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      value > 100
+    ) {
+      throw new CliError(
+        `${CONFIG_FILE_NAME}: threshold must be a number from 0 to 100.`,
+      )
+    }
+    config.threshold = value
+  }
+  if (record.rules !== undefined) {
+    const value = record.rules
+    if (
+      !Array.isArray(value) ||
+      value.some((id) => typeof id !== 'string')
+    ) {
+      throw new CliError(
+        `${CONFIG_FILE_NAME}: rules must be a list of rule ids.`,
+      )
+    }
+    const unknownIds = [...new Set(value)].filter(
+      (id) => !KNOWN_RULE_IDS.has(id),
+    )
+    if (unknownIds.length > 0) {
+      throw new CliError(
+        `${CONFIG_FILE_NAME}: unknown rule id(s): ${unknownIds.join(', ')}.`,
+      )
+    }
+    config.rules = [...new Set(value)]
+  }
+  return config
 }
 
 // The bundled demo site (F12): the same fixture the Website panel
@@ -137,6 +227,21 @@ export interface CliIo {
   stdinIsTTY: boolean
   writeOut: (text: string) => void
   writeErr: (text: string) => void
+  // Reads sloppy.config.json from the working directory, or null
+  // when there is no config file. Optional so older test fakes keep
+  // working; runCli falls back to the real filesystem reader below.
+  readConfig?: () => Promise<string | null>
+}
+
+// The real config reader: a missing file is fine (no config), any
+// other read failure is an error, never a silent skip.
+const readDefaultConfig = async (): Promise<string | null> => {
+  try {
+    return await readFile(CONFIG_FILE_NAME, 'utf8')
+  } catch (caught) {
+    if ((caught as { code?: unknown })?.code === 'ENOENT') return null
+    throw new CliError(`Cannot read ${CONFIG_FILE_NAME}.`)
+  }
 }
 
 const readProcessStdin = async (): Promise<string> => {
@@ -152,6 +257,7 @@ export const defaultIo = (): CliIo => ({
   stdinIsTTY: process.stdin.isTTY ?? false,
   writeOut: (text) => process.stdout.write(text),
   writeErr: (text) => process.stderr.write(text),
+  readConfig: readDefaultConfig,
 })
 
 const takeValue = (
@@ -167,18 +273,24 @@ const takeValue = (
 }
 
 export const parseCliArgs = (argv: readonly string[]): CliOptions => {
+  // The `check` subcommand (F60): `sloppy check draft.txt` is the
+  // same scan as `sloppy draft.txt`. It must come first — a file
+  // literally named "check" is still scannable as `./check`, and a
+  // `check` after a flag is a positional file, not a subcommand.
+  const args = argv[0] === 'check' ? argv.slice(1) : argv
   let file: string | null = null
   let url: string | null = null
   let stdin = false
   let demo = false
   let format: 'json' | 'sarif' = 'json'
   let threshold = DEFAULT_THRESHOLD
+  let thresholdSet = false
   let help = false
   let version = false
   let endOfFlags = false
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
     if (!endOfFlags && arg === '--') {
       endOfFlags = true
       continue
@@ -193,7 +305,7 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
       const inline = eq === -1 ? undefined : arg.slice(eq + 1)
       const valueOf = (name: string): string => {
         if (inline !== undefined) return inline
-        const taken = takeValue(argv, i, name)
+        const taken = takeValue(args, i, name)
         i = taken.next - 1
         return taken.value
       }
@@ -201,6 +313,7 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
       else if (flag === '--version') version = true
       else if (flag === '--stdin') stdin = true
       else if (flag === '--demo') demo = true
+      else if (flag === '--json') format = 'json'
       else if (flag === '--sarif') format = 'sarif'
       else if (flag === '--file') {
         if (file !== null) throw new CliError('Pass only one input file.')
@@ -227,6 +340,7 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
           throw new CliError('--threshold must be a number from 0 to 100.')
         }
         threshold = value
+        thresholdSet = true
       } else {
         throw new CliError(`Unknown option: ${flag}.`)
       }
@@ -270,6 +384,7 @@ export const parseCliArgs = (argv: readonly string[]): CliOptions => {
               : null,
     format,
     threshold,
+    thresholdSet,
     help,
     version,
   }
@@ -431,19 +546,41 @@ export const runCli = async (
     return 0
   }
 
+  // The config file (F60): loaded only when a scan is actually
+  // going to run, so --help and --version never touch the disk for
+  // it. A missing file means no config; an unreadable or invalid
+  // one is a usage error. A --threshold flag wins over the config
+  // file's threshold; without a flag, the config threshold is the
+  // gate. The config's rules list filters the copy rules (and the
+  // copy part of a website scan) through analyze/analyzeSite.
+  let config: SloppyConfig | null = null
+  try {
+    const raw = await (io.readConfig ?? readDefaultConfig)()
+    config = raw === null ? null : parseSloppyConfig(raw)
+  } catch (caught) {
+    io.writeErr(
+      `${caught instanceof Error ? caught.message : 'Bad config file.'}\n`,
+    )
+    return 2
+  }
+  const threshold = options.thresholdSet
+    ? options.threshold
+    : (config?.threshold ?? options.threshold)
+  const enabledRuleIds = config?.rules
+
   try {
     let score: number | null
     let output: string
     if (options.input?.kind === 'url') {
       const source = await fetchSiteSource(options.input.url, io.fetchSite)
-      const site = analyzeSite(source)
+      const site = analyzeSite(source, { enabledRuleIds })
       score = site.score
       output =
         options.format === 'sarif'
           ? JSON.stringify(siteToSarif(site, version), null, 2)
           : JSON.stringify(siteJsonReport(site, version), null, 2)
     } else if (options.input?.kind === 'demo') {
-      const site = analyzeSite(loadDemoSource())
+      const site = analyzeSite(loadDemoSource(), { enabledRuleIds })
       score = site.score
       output =
         options.format === 'sarif'
@@ -472,7 +609,7 @@ export const runCli = async (
           `That draft is larger than ${MAX_CLI_INPUT_BYTES / 1024 / 1024} MB. Split it and scan the parts.`,
         )
       }
-      const analysis = analyze(text)
+      const analysis = analyze(text, { enabledRuleIds })
       score = analysis.score
       output =
         options.format === 'sarif'
@@ -487,7 +624,7 @@ export const runCli = async (
     // An unreadable page (F34) has no score: it is a failed scan,
     // not a failed gate, so it exits 2 like a fetch error.
     if (score === null) return 2
-    return score >= options.threshold ? 0 : 1
+    return score >= threshold ? 0 : 1
   } catch (caught) {
     io.writeErr(
       `${caught instanceof Error ? caught.message : 'The scan failed.'}\n`,
