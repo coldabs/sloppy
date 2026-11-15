@@ -21,7 +21,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b",
-    "bench": "vitest run bench/bench.test.ts"
+    "bench": "vitest run bench/bench.test.ts",
+    "check:citations": "node scripts/check-citations.mjs"
   },
   "dependencies": {
     "@fontsource-variable/instrument-sans": "^5.3.0",
