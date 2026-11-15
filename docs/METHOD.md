@@ -160,7 +160,7 @@ instead of calling an empty page clean.
 
 ## The rules
 
-Twenty-eight rules, in seven groups.
+Twenty-nine rules, in seven groups.
 
 ### Voice
 
@@ -176,7 +176,7 @@ Words that perform confidence instead of naming a capability.
 | Template opener (`overused-opener`) | Low | "in today's world", "in today's fast-paced world", "in today's online world", "in a world where", "imagine a world", "ever wondered", "we've all been there", "let's face it", "here's the thing", "in an era of", "picture this", "imagine this", "in the digital age", "in the modern world", "in our modern world", "in this day and age", "have you ever", "what if i told you", "the truth is", "listen up", "dear reader", "once upon a time", "it is no secret that", "there is no denying that", "needless to say", "in a fast-paced world" / "in a fast paced world", "in this fast-paced world" / "in this fast paced world" | Start with the claim itself. |
 | Template closer (`template-closer`) | Low | "to sum up", "to summarize", "in summary", "in closing", "all in all", "to wrap up", "wrapping up", "in a nutshell", "long story short", "thanks for reading", "stay tuned", "until next time", "that is all", "let me know what you think" | End on the claim itself, or just stop. |
 | Not just X, but Y (`not-just`) | Low | The stock cadence "not just X, but Y", where the twist arrives in the same sentence, however long the clause is — or on the next line, when the setup line ends with a comma. "Yet" counts as a twist too. | State the claim once, directly. |
-| Hype punctuation (`hype-punctuation`) | Low | Repeated `!` or `?` marks, and celebration emoji: fire, rocket, sparkle, party popper, 100, heart-eyes, partying face, raising hands, clapping hands, flexed biceps, party, and glowing star | Keep one period and let the sentence carry the weight. |
+| Hype punctuation (`hype-punctuation`) | Low | Repeated `!` or `?` marks, celebration emoji: fire, rocket, sparkle, party popper, 100, heart-eyes, partying face, raising hands, clapping hands, flexed biceps, party, and glowing star — and the same emoji three or more times in a row. A single ordinary emoji on its own is left alone | Keep one period and let the sentence carry the weight. |
 
 ### Claims
 
@@ -221,6 +221,7 @@ Labels that hide what the click actually does.
 | Rule | Severity | What it catches | Fix |
 | --- | --- | --- | --- |
 | Generic call to action (`generic-cta`) | Medium | "get started", "learn more", "try now", "try it now", "explore", "discover", "click here", "read more", "sign up today", "sign up", "sign up to continue", "start now", "start your free trial", "start a free trial", "find out more", "buy now", "subscribe today", "subscribe now", "subscribe", "download it free", "download now", "download free", "download", "book a demo", "get a quote". "Explore" or "discover" followed by documentation words — the codebase, the API, the docs — is navigation, not a sales button, and is left alone. So are "learn more" and "click here" when they point at the documentation, and "get started" followed by a command, as in "run npm install". A call to action that sits on a heading line — a markdown heading, or a short line of capitalised words with no sentence terminator — is a label, not sales copy, and is left alone | Name the action, for example "Paste your draft" or "See the rules". |
+| Urgency and scarcity wording (`urgency-scarcity`) | Low | "while stocks last", "while supplies last", "grab yours", "act now", "don't miss out", "limited time offer", "last chance", "only today", "offer ends" | Drop the deadline, or say when it actually ends. |
 | Vague product noun (`vague-solution`) | Low | "solutions", "solution for", "all-in-one", "one-stop shop", "everything you need", "end-to-end", "does it all". "Solutions" in a maths sentence, such as "solutions to the equation", is left alone | Name the specific task the product performs. |
 
 ### Format
