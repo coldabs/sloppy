@@ -1,9 +1,12 @@
-// check-docs.mjs — F57: numbers stated in the docs must match the code.
+// check-docs.mjs — F57 + F67: numbers stated in the docs must match the code,
+// and no doc may link outside the repository.
 // - README.md's "<N> copy rules" must equal the rule count in
 //   src/lib/rules/ (one `id: '...',` per rule definition).
 // - docs/METHOD.md's vocabulary/cliché union sizes must equal the
 //   values pinned by src/lib/polish.test.ts, which measures the
 //   phrase lists directly.
+// - No *.md file may contain a sandbox:// link or a ~/workspace path:
+//   both resolve nowhere for a reader of the public repo.
 // Run in CI via `npm run check:docs`; needs no network.
 import { readFileSync, readdirSync } from 'node:fs'
 
@@ -37,6 +40,27 @@ if (vocab !== undefined && methodVocab !== vocab) {
 if (cliche !== undefined && methodCliche !== cliche) {
   failures.push(`METHOD.md cliche union is ${methodCliche}, polish test pins ${cliche}`)
 }
+
+// F67: every Markdown file must be readable from the public repo —
+// no sandbox:// links, no ~/workspace paths.
+const skipDirs = new Set(['node_modules', '.git', 'dist'])
+const walk = (dir) => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`
+    if (entry.isDirectory()) {
+      if (!skipDirs.has(entry.name)) walk(path)
+    } else if (entry.name.endsWith('.md')) {
+      const text = readFileSync(path, 'utf8')
+      if (text.includes('sandbox://')) {
+        failures.push(`${path}: contains a sandbox:// link`)
+      }
+      if (text.includes('~/workspace')) {
+        failures.push(`${path}: contains a ~/workspace path`)
+      }
+    }
+  }
+}
+walk('.')
 
 if (failures.length > 0) {
   console.error('check-docs: FAILED')
