@@ -249,9 +249,10 @@ export function SiteChecker() {
       }
 
       setStatus('analyzing')
-      // The analysis runs in a Web Worker (main-thread fallback if
-      // Workers are unavailable), so a long page never blocks the UI
-      // while it is read.
+      // Site analysis runs on the main thread: analyzeSite() needs
+      // DOMParser, which a worker does not have, so sending it to
+      // the worker only threw and fell back anyway (F2). Copy
+      // analysis still runs in the worker.
       const result = await analyzeSiteAsync({ url: pageUrl, html, stylesheets })
       setAnalysis(result)
       setTargetUrl(pageUrl)

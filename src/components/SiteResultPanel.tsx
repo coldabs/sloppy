@@ -124,10 +124,22 @@ export function SiteResultPanel({
   const copyFindings = copyItems(analysis)
 
   return (
-    <div className="result result--found site-result">
+    <>
+      {score === null ? (
+        <div className="result result--error" role="alert">
+          <p className="eyebrow">Page not readable</p>
+          <p className="result__verdict">No score — the page was not read</p>
+          <p className="result__hint">
+            This page ships an empty shell and renders its content in JavaScript. The
+            static fetch saw no readable copy, no links, and no headings, so no
+            score is given. Use the copy mode to paste the page text instead.
+          </p>
+        </div>
+      ) : null}
+      <div className="result result--found site-result">
       <div className="result__top">
         <div className="result__score result__score--filled">
-          <span className="result__number">{score}</span>
+          <span className="result__number">{score === null ? '—' : score}</span>
           <span className="result__denom">/ 100</span>
         </div>
         <div className="result__summary">
@@ -262,6 +274,7 @@ export function SiteResultPanel({
           </section>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }
