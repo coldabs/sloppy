@@ -56,12 +56,57 @@ const runFetch = async (action) => {
   }
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
+
+const hostnameOf = (hostHeader) => {
+  const raw = (hostHeader ?? '').trim()
+  if (raw.startsWith('[')) {
+    const end = raw.indexOf(']')
+    return end === -1 ? '' : raw.slice(1, end).toLowerCase()
+  }
+  return raw.split(':')[0].toLowerCase()
+}
+
+// Whether an API request comes from this server (F11): the Host
+// header must name a loopback host, and when an Origin header is
+// present it must name one too.
+const isLocalApiRequest = (request) => {
+  if (!LOOPBACK_HOSTS.has(hostnameOf(request.headers.host))) return false
+  const origin = request.headers.origin
+  if (!origin) return true
+  let originUrl
+  try {
+    originUrl = new URL(origin)
+  } catch {
+    return false
+  }
+  return LOOPBACK_HOSTS.has(originUrl.hostname.toLowerCase())
+}
+
 const handleApi = async (request, response, url) => {
   if (!url.pathname.startsWith('/api/')) return false
 
   if (request.method !== 'GET') {
     sendJson(response, 405, { error: 'method-not-allowed', message: 'Use GET.' })
     return true
+  }
+
+  // The fetch endpoints trigger outbound requests, so they only
+  // answer callers that are actually this server (F11). A Host
+  // header naming another host means DNS rebinding (a foreign name
+  // resolving to 127.0.0.1); a foreign Origin means a page on
+  // another site is driving the local API. Requests with no Origin
+  // (curl, same-origin navigations) are allowed, and a loopback
+  // Origin on any port is allowed — a split local setup (the app
+  // served from another port) is the user's own machine.
+  if (url.pathname === '/api/fetch' || url.pathname === '/api/css') {
+    if (!isLocalApiRequest(request)) {
+      sendJson(response, 403, {
+        error: 'forbidden-origin',
+        message: 'The fetch API only answers requests from this server.',
+      })
+      return true
+    }
   }
 
   if (url.pathname === '/api/health') {
