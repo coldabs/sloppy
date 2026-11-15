@@ -130,6 +130,17 @@ describe('bench: labelled corpus', () => {
       (row) => row.score >= 70 && row.score < 90,
     ).length
     console.log(`grey zone: ${inBand}/${grey.length} inside 70-89`)
+    // F28 calibration gate: the grey zone is the metric that
+    // discriminates the scoring constants. The binary gates above
+    // stay at 100% over wide ranges of every constant, so they
+    // cannot tell a good constant from a bad one — but the grey
+    // entries sit near the band edges, and the low weight, the
+    // decay, and the density saturation each have exactly one
+    // swept value that keeps all eight in band (see
+    // bench/CALIBRATION.md). A constant change that pushes a grey
+    // entry out of its band has to be deliberate: update the corpus
+    // label or the constant, with a reason.
+    expect(inBand).toBe(grey.length)
   })
 
   it('reports per-rule precision', () => {
