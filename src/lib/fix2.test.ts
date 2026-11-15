@@ -328,13 +328,19 @@ describe('fix2: F-35 English-only is documented, base layer still works', () => 
 })
 
 describe('fix2: F-36 package hygiene and CI', () => {
-  it('declares the Apache 2.0 licence and a real version, staying private', () => {
+  it('declares the Apache 2.0 licence and a real version, and is publishable', () => {
     const pkg = JSON.parse(
       readFileSync(new URL('../../package.json', import.meta.url), 'utf-8'),
     )
     expect(pkg.license).toBe('Apache-2.0')
     expect(pkg.version).toBe('0.2.0')
-    expect(pkg.private).toBe(true)
+    // F60: the package is no longer private — `npx sloppy` has to be
+    // installable — and the published tarball must carry the built
+    // CLI bundle, which is gitignored and would otherwise be left
+    // out. `prepare` builds it before `npm publish` packs.
+    expect(pkg.private).toBeUndefined()
+    expect(pkg.files).toContain('bin')
+    expect(pkg.files).toContain('dist')
   })
 
   it('has a CI workflow that lints, typechecks, tests, and builds', () => {
