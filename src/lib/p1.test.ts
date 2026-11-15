@@ -16,7 +16,10 @@ describe('P1: de-duplication (F-06)', () => {
     // P0 scored 67 here (penalty 21.67, counted twice). One span is
     // one piece of evidence, so the penalty drops to 15 and the
     // score rises to 76.
-    expect(result.score).toBe(76)
+    // Stage 3, intentional change: the adaptive floor judges this
+    // 7-word draft as 15 words, not 50, so the one medium hit costs
+    // a 36 penalty and scores 52. The span still counts once.
+    expect(result.score).toBe(52)
   })
 })
 
@@ -177,7 +180,10 @@ describe('P1: context exemptions and allowlist (F-10)', () => {
   it('still flags a shouted banner', () => {
     const result = analyze('SALE ENDS TODAY. BUY ONE GET ONE FREE.')
     expect(ruleIds('SALE ENDS TODAY. BUY ONE GET ONE FREE.')).toContain('shouting-caps')
-    expect(result.score).toBe(64)
+    // Stage 3, intentional change: this 8-word banner is judged
+    // against an 18-word floor, not 50, so the same shouting costs
+    // more and scores 55 instead of 64.
+    expect(result.score).toBe(55)
   })
 
   it('leaves "get started" alone when it is followed by a command', () => {

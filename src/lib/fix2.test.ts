@@ -59,12 +59,19 @@ describe('fix2: F-19 a citation has to name its publication', () => {
 describe('fix2: F-20 one claim counts once', () => {
   it('counts "99.9% uptime" as a trust claim, not a trust claim plus a number', () => {
     expect(ruleIds('We guarantee 99.9% uptime.')).toEqual(['trust-claim'])
-    expect(analyze('We guarantee 99.9% uptime.').score).toBe(63)
+    // Stage 3, intentional change: this 4-word draft is judged
+    // against a 12-word floor, not 50, so the one high hit costs a
+    // 68.18 penalty and scores 29 instead of 63. It still counts
+    // once, under the trust-claim rule only.
+    expect(analyze('We guarantee 99.9% uptime.').score).toBe(29)
   })
 
   it('counts "Trusted by 10,000 teams" as social proof only', () => {
     expect(ruleIds('Trusted by 10,000 teams worldwide.')).toEqual(['social-proof'])
-    expect(analyze('Trusted by 10,000 teams worldwide.').score).toBe(76)
+    // Stage 3, intentional change: this 5-word draft is judged
+    // against a 12-word floor, not 50, so the one medium hit costs
+    // a 40.91 penalty and scores 48 instead of 76.
+    expect(analyze('Trusted by 10,000 teams worldwide.').score).toBe(48)
   })
 
   it('still flags a number when no social-proof phrase matches it', () => {
@@ -299,10 +306,10 @@ describe('fix2: F-34 empty input is not "Clean enough"', () => {
 })
 
 describe('fix2: F-35 English-only is documented, base layer still works', () => {
-  it('says so in the README and in the Method page', () => {
+  it('says so in the README and in the Method doc', () => {
     const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf-8')
     const method = readFileSync(
-      new URL('../components/Method.tsx', import.meta.url),
+      new URL('../../docs/METHOD.md', import.meta.url),
       'utf-8',
     )
     expect(readme).toContain('Only English text is checked')

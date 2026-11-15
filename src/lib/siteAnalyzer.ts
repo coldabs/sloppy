@@ -109,6 +109,12 @@ export const analyzeSite = ({ url, html, stylesheets = [] }: SiteSource): SiteAn
     const hits = rule.detect(context)
     if (hits.length === 0) continue
 
+    // Occurrences are counted from the hits, not from how many are
+    // displayed: a rule that fires hundreds of times counts every
+    // occurrence first and slices its display list afterwards (see
+    // sliceForDisplay in siteRules.ts — the first shown hit carries
+    // the full count, the rest carry 0), so the 400/400/300 display
+    // caps can never silently hide occurrences from the penalty.
     const occurrences = hits.reduce((sum, hit) => sum + (hit.count ?? 1), 0)
     counts[rule.severity] += occurrences
     siteHits += occurrences

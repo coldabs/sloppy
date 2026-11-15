@@ -74,6 +74,72 @@ describe('normalizeForScan', () => {
   })
 })
 
+describe('normalisation keeps URIs, paths, and slash compounds whole', () => {
+  it('leaves domain names intact', () => {
+    expect(normalizeForScan('nextjs.org').text).toBe('nextjs.org')
+    expect(normalizeForScan('github.com/coldabs/sloppy').text).toBe(
+      'github.com/coldabs/sloppy',
+    )
+    expect(normalizeForScan('Visit https://example.com/pricing today').text).toBe(
+      'Visit https://example.com/pricing today',
+    )
+  })
+
+  it('leaves file paths intact', () => {
+    expect(normalizeForScan('src/lib/rules.ts').text).toBe('src/lib/rules.ts')
+    expect(normalizeForScan('docs/METHOD.md').text).toBe('docs/METHOD.md')
+    expect(normalizeForScan('src/lib/rules').text).toBe('src/lib/rules')
+  })
+
+  it('leaves common slash conjunctions intact', () => {
+    for (const text of [
+      'and/or',
+      'input/output',
+      'client/server',
+      'true/false',
+      'on/off',
+      'read/write',
+    ]) {
+      expect(normalizeForScan(text).text, text).toBe(text)
+    }
+  })
+
+  it('leaves version strings intact', () => {
+    expect(normalizeForScan('v2.0').text).toBe('v2.0')
+    expect(normalizeForScan('Version 2.0.1 shipped').text).toBe(
+      'Version 2.0.1 shipped',
+    )
+  })
+
+  it('still folds a genuine obfuscation split', () => {
+    expect(normalizeForScan('seam.less').text).toBe('seam\uE000less')
+    expect(normalizeForScan('revo/lutionary').text).toBe('revo\uE000lutionary')
+    expect(normalizeForScan('game.changing').text).toBe('game\uE000changing')
+    // An unknown suffix is not a known TLD or extension, so it folds.
+    expect(normalizeForScan('word.zzz').text).toBe('word\uE000zzz')
+  })
+
+  it('does not flag prose that only mentions a domain, path, or conjunction', () => {
+    for (const text of [
+      'See the docs at nextjs.org and the code in src/lib/rules.ts.',
+      'The input/output ratio and the client/server setup use true/false flags.',
+      'Tea and/or coffee is available.',
+      'Version v2.0 shipped on time.',
+    ]) {
+      const result = analyze(text)
+      expect(result.score, text).toBe(100)
+      expect(result.findings, text).toHaveLength(0)
+    }
+  })
+
+  it('still catches a buzzword split by a period', () => {
+    const ids = analyze('Our seam.less platform ships today.').findings.map(
+      (finding) => finding.ruleId,
+    )
+    expect(ids).toContain('buzzwords')
+  })
+})
+
 describe('normalisation evasions', () => {
   it('catches a buzzword split across two words', () => {
     const ids = analyze('A seam less work flow, revo lutionary and game changing.')

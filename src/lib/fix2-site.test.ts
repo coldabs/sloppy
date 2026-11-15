@@ -10,7 +10,7 @@ const styleOnlyPage = `<!doctype html>
   </head>
   <body>
     <h1>Notes</h1>
-    <p>The meeting moved to Thursday. Bring the draft.</p>
+    <p class="a b c d e">The meeting moved to Thursday. Bring the draft.</p>
     <style>
       .a { backdrop-filter: blur(8px); }
       .b { backdrop-filter: blur(8px); }

@@ -169,6 +169,104 @@ const isWordChar = (ch: string | undefined): boolean =>
 const isLetter = (ch: string | undefined): boolean =>
   ch !== undefined && /[\p{L}]/u.test(ch)
 
+// Top-level domains and file extensions that mark the token on either
+// side of a period as a domain name or a file name, not an obfuscation
+// split: "nextjs.org" and "src/lib/rules.ts" stay whole. The lists are
+// deliberately common names only — an unknown suffix is treated as a
+// split, because "seam.less" must still fold.
+const KNOWN_TLDS = new Set([
+  'com', 'org', 'net', 'io', 'dev', 'app', 'co', 'ai', 'me', 'gg', 'xyz',
+  'info', 'biz', 'edu', 'gov', 'mil', 'int', 'eu', 'uk', 'de', 'fr', 'it',
+  'es', 'nl', 'be', 'ch', 'at', 'jp', 'cn', 'kr', 'in', 'br', 'au', 'ca',
+  'us', 'ru', 'ua', 'pl', 'se', 'no', 'dk', 'fi', 'nz', 'za', 'tv', 'cc',
+  'fm', 'am', 'sh', 'so', 'ly', 'to', 'tech', 'blog', 'site', 'online',
+  'store', 'cloud', 'digital', 'systems', 'network', 'agency', 'studio',
+  'works', 'world', 'live', 'news', 'media', 'video', 'music', 'games',
+  'social', 'email', 'academy', 'school', 'college', 'health', 'finance',
+  'legal', 'law', 'pro', 'name', 'mobi', 'asia', 'aero', 'cat', 'coop',
+  'jobs', 'museum', 'post', 'tel', 'travel', 'xxx', 'arpa',
+])
+
+// "less" is deliberately NOT here: it is an ordinary English word
+// first, and "seam.less" is the canonical obfuscation split — listing
+// it as an extension would let the evasion through.
+const FILE_EXTENSIONS = new Set([
+  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'css', 'scss', 'sass',
+  'html', 'htm', 'json', 'md', 'markdown', 'py', 'rb', 'go', 'rs', 'java',
+  'kt', 'kts', 'c', 'h', 'cpp', 'hpp', 'cc', 'cs', 'php', 'swift', 'pdf',
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'txt', 'csv', 'xml',
+  'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'sh', 'bash', 'sql', 'lock',
+  'log', 'mp3', 'mp4', 'wav', 'mov', 'zip', 'gz', 'tar', 'exe', 'wasm',
+  'vue', 'svelte', 'astro', 'env', 'dockerignore', 'gitignore',
+])
+
+// Slash compounds that are ordinary English, not obfuscation splits.
+const SLASH_CONJUNCTIONS = new Set([
+  'and/or', 'input/output', 'client/server', 'true/false', 'on/off',
+  'yes/no', 'read/write', 'front/back', 'up/down', 'in/out', 'either/or',
+  'he/she', 'his/her', 'day/night', 'win/lose', 'pass/fail', 'north/south',
+  'east/west',
+])
+
+// One character folded the way normalisation folds it, for comparing
+// token text: NFKD, combining marks stripped, lookalikes mapped.
+const foldForCheck = (ch: string): string => {
+  const folded = ch.normalize('NFKD').replace(/[\p{M}]/gu, '')
+  return [...folded].map((c) => HOMOGLYPHS.get(c) ?? c).join('').toLowerCase()
+}
+
+const isTokenChar = (ch: string): boolean =>
+  isWordChar(ch) || ch === '-' || ch === '.' || ch === '/'
+
+// The maximal run of token characters on one side of position i,
+// folded for comparison. Zero-width characters are skipped: they do
+// not survive normalisation, so they cannot break a token apart.
+const tokenRun = (chars: string[], i: number, dir: -1 | 1): string => {
+  let run = ''
+  for (let j = i + dir; j >= 0 && j < chars.length; j += dir) {
+    const ch = chars[j]
+    if (ZERO_WIDTH.has(ch)) continue
+    if (!isTokenChar(ch)) break
+    run = dir < 0 ? foldForCheck(ch) + run : run + foldForCheck(ch)
+  }
+  return run
+}
+
+// True when the '.' or '/' at chars[i] sits inside a URI, file path,
+// or common slash compound, and must be left as-is. The test is
+// whether either side forms a known token, not whether the words
+// merely look plausible:
+// - a dot followed by a known TLD or file extension anywhere in the
+//   token ("nextjs.org", "github.com/coldabs/sloppy", "rules.ts");
+// - a known slash conjunction ("and/or", "client/server");
+// - a multi-segment path ("src/lib/rules").
+// A bare two-word split with none of those signals — "seam.less",
+// "revo/lutionary", "game.changing" — still folds, which is what
+// closes the evasion. Accepted trade-off: a contrived three-segment
+// split such as "seam.less/more" is kept whole as a path; the
+// single-separator evasion that matters still folds.
+const isUriOrCompoundSeparator = (chars: string[], i: number): boolean => {
+  const sep = foldForCheck(chars[i])
+  const left = tokenRun(chars, i, -1)
+  const right = tokenRun(chars, i, 1)
+  const combined = `${left}${sep}${right}`
+
+  for (const match of combined.matchAll(/\.([a-z0-9]+)(?=[./-]|$)/g)) {
+    if (KNOWN_TLDS.has(match[1]) || FILE_EXTENSIONS.has(match[1])) return true
+  }
+
+  if (sep === '/') {
+    const leftWord = left.split(/[./-]/).pop() ?? ''
+    const rightWord = right.split(/[./-]/)[0] ?? ''
+    if (SLASH_CONJUNCTIONS.has(`${leftWord}/${rightWord}`)) return true
+  }
+
+  const segments = combined.split(/[./]/)
+  if (segments.length >= 3 && combined.includes('/')) return true
+
+  return false
+}
+
 // The nearest character that survives normalisation on either side of
 // position i. Zero-width characters are stripped before scanning, so a
 // dash next to one — "fast\u200b-paced" — has to be judged by the
@@ -266,12 +364,15 @@ export const normalizeForScan = (original: string): NormalizedText => {
       } else if (
         (mapped === '.' || mapped === '/') &&
         isLetter(effectivePrev(chars, i)) &&
-        isLetter(effectiveNext(chars, i))
+        isLetter(effectiveNext(chars, i)) &&
+        !isUriOrCompoundSeparator(chars, i)
       ) {
         // A period or slash between two letters is a separator, not
         // punctuation, so "seam.less" scans as "seamless". Digits on
         // either side stay as they are, so "v2.0" and "1.5" are
-        // untouched, and "and/or" scans as two ordinary words.
+        // untouched. A separator inside a domain name, file path, or
+        // common slash compound ("nextjs.org", "src/lib/rules.ts",
+        // "and/or") is left alone — see isUriOrCompoundSeparator.
         mapped = UNDERSCORE_PLACEHOLDER
       } else if (mapped === '_') {
         mapped = UNDERSCORE_PLACEHOLDER

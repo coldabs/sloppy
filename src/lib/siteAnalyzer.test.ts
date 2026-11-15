@@ -44,6 +44,7 @@ const sloppyPage = `<!doctype html>
       <p>The most popular plan costs $19 per month.</p>
     </section>
     <p>Our revolutionary AI-powered platform is seamless and effortless.</p>
+    <div class="a b c d e f g h i j"></div>
     <style>
       .a { border-radius: 999px; }
       .b { border-radius: 120px; }
@@ -114,7 +115,7 @@ describe('analyzeSite', () => {
   })
 
   it('includes fetched stylesheet text in the style checks', () => {
-    const html = `<html><head><title>Doc</title><meta name="description" content="A page." /></head><body><h1>Doc</h1></body></html>`
+    const html = `<html><head><title>Doc</title><meta name="description" content="A page." /></head><body><h1>Doc</h1><p class="a b c d e">Doc</p></body></html>`
     const css = `
       .a { backdrop-filter: blur(6px); }
       .b { backdrop-filter: blur(7px); }

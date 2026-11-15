@@ -116,7 +116,11 @@ describe('polish: F-43 dialogue dashes', () => {
     const dashSlop =
       'The platform is fast — and it is simple. The team is bold — and the work is clean. The design is bright — and the code is tight. The launch is near — and the users are ready. The price is fair — and the value is clear. The support is kind — and the answers are quick. The roadmap is open — and the future is bright. The data is safe — and the servers are fast. The product is ready — and the market is waiting. The story is simple — and the ending is good.'
     expect(ruleIds(dashSlop)).toContain('em-dash')
-    expect(score(dashSlop)).toBe(36)
+    // Stage 4: was 36 under raw TTR. The low-ttr penalty depth
+    // changed with MATTR (the dash sentences reuse one frame, so
+    // MATTR sits further below its threshold than raw TTR sat below
+    // its band), moving the score to 34. Still Heavy slop.
+    expect(score(dashSlop)).toBe(34)
   })
 })
 
@@ -220,9 +224,17 @@ describe('polish: F-50 per-sentence formal register', () => {
       'The team shipped the update on Thursday evening after the final review, and the notes listed every fix.',
     ].join(' ')
     const draft = pad.repeat(12)
-    expect(ruleIds(draft)).toContain('low-ttr')
+    // Stage 4: low-ttr no longer fires here. Under raw TTR the
+    // 2,245-word draft scored 0.059 (the same 12 sentences repeated,
+    // so the global ratio collapses with length); under MATTR each
+    // 100-word window is as varied as the original 12 sentences
+    // (0.758), so the local vocabulary is not narrow. The repetition
+    // is still caught — by repeated-bigrams, which is the diversity
+    // signal that measures past the legal sentences here (F-50's
+    // point stands: the two legal sentences do not exempt the rest).
+    expect(ruleIds(draft)).not.toContain('low-ttr')
     expect(ruleIds(draft)).toContain('repeated-bigrams')
-    expect(score(draft)).toBe(45)
+    expect(score(draft)).toBe(53)
   })
 
   it('still leaves a clean legal paragraph alone', () => {
@@ -286,7 +298,7 @@ describe('polish: F-56 evidence link in the next sentence', () => {
 })
 
 describe('polish: F-53 inventory counts', () => {
-  it('measures 165 distinct vocabulary terms and 129 distinct clichés', () => {
+  it('measures 215 distinct vocabulary terms and 129 distinct clichés', () => {
     const vocab = new Set([
       ...BUZZWORD_PHRASES,
       ...AI_TELL_PHRASES,
@@ -302,7 +314,14 @@ describe('polish: F-53 inventory counts', () => {
       ...SUPERLATIVE_PHRASES,
       ...SOCIAL_PROOF_PHRASES,
     ])
-    expect(vocab.size).toBe(165)
+    // Stage 4: was 165. The suffix completion added 50 listed forms
+    // (verb paradigms for unleash, supercharge, empower, leverage,
+    // revolutionize, turbocharge, skyrocket, garner, surpass, boast,
+    // tapestries, and the tier-3 stems align, emphasize, pioneer,
+    // spearhead, champion, orchestrate, cultivate, plus the
+    // game-changers / paradigm-shifts / advancement plurals). The
+    // cliché union is unchanged at 129.
+    expect(vocab.size).toBe(215)
     expect(cliche.size).toBe(129)
   })
 })

@@ -42,6 +42,10 @@ export interface Analysis {
   rulesHit: number
   words: number
   penalty: number
+  // Extra penalty from the sentence-level co-occurrence multiplier
+  // (Stage 3): 0 when no sentence fired three or more distinct
+  // phrase-rule groups.
+  cooccurrenceBoost: number
   // True when the draft had no words at all. The score is 100 only
   // because there is nothing to score, and the verdict says so: an
   // empty draft is not "Clean enough".
@@ -64,18 +68,203 @@ const DOCUMENT_GROUPS = new Set<GroupId>([
 // Density scoring. A rule's contribution is its severity weight scaled
 // by how often the pattern appears per 100 words, levelling off, so
 // repeating one phrase costs more than saying it twice, but never
-// without limit. Drafts under 50 words are scored as if they were 50
-// words, so a single hit in a short note is not treated as if the
-// whole draft were that one tell. At 100 words with one hit per rule
-// the factor is close to 1, so the old scores for ordinary drafts
-// barely move.
+// without limit.
+//
+// The density is measured twice and blended: once over the whole
+// draft, once over the worst 100-word sliding window (step 25 words),
+// combined as 0.35 * global + 0.65 * peak. A sloppy hero followed by
+// a thousand clean words still scores as slop, because the peak
+// window holds the hero's density while the global term only softens
+// it. A short draft is scored against an adaptive floor instead of a
+// flat 50 words: the floor is min(50, max(12, round(words * 2.2))),
+// so a one-word draft is judged as 12 words, not 50, and a five-word
+// tagline as 12 too, scaling smoothly up to 50 words at 23 words.
 export const DENSITY_FLOOR_WORDS = 50
 export const DENSITY_SATURATION = 10
+export const WINDOW_WORDS = 100
+export const WINDOW_STEP_WORDS = 25
+export const WINDOW_GLOBAL_WEIGHT = 0.35
+export const WINDOW_PEAK_WEIGHT = 0.65
+
+export const adaptiveFloorWords = (words: number): number => {
+  if (words <= 0) return 1
+  return Math.min(DENSITY_FLOOR_WORDS, Math.max(12, Math.round(words * 2.2)))
+}
 
 export const densityFactor = (hits: number, words: number): number => {
-  const effectiveWords = Math.max(words, DENSITY_FLOOR_WORDS)
+  if (hits <= 0) return 0
+  const effectiveWords = Math.max(words, adaptiveFloorWords(words))
   const per100 = (hits * 100) / effectiveWords
   return per100 / (1 + per100 / DENSITY_SATURATION)
+}
+
+export interface WordSpan {
+  start: number
+  end: number
+}
+
+// Word spans in the scanned text, so a rule match and the words around
+// it share one coordinate system.
+export const wordSpans = (text: string): WordSpan[] => {
+  const spans: WordSpan[] = []
+  for (const match of text.matchAll(/\S+/g)) {
+    const start = match.index ?? 0
+    spans.push({ start, end: start + match[0].length })
+  }
+  return spans
+}
+
+// The density of a rule's matches inside the worst 100-word window.
+// Windows step by 25 words, and the final partial window is evaluated
+// too: the loop runs while a window starts before the last word, so a
+// tail shorter than the step is still a window. A match counts in
+// every window it touches, including one it straddles — the peak is
+// the worst window, not a partition, so a straddling match is never
+// dropped for sitting on a boundary. The peak is always measured per
+// 100 words, so a short tail window is scored conservatively, as one
+// hit per 100 words rather than per its few words.
+export const peakWindowDensityFactor = (
+  matchOffsets: readonly RawMatch[],
+  spans: readonly WordSpan[],
+): number => {
+  const totalWords = spans.length
+  if (matchOffsets.length === 0 || totalWords === 0) return 0
+  if (totalWords <= WINDOW_WORDS) {
+    return densityFactor(matchOffsets.length, totalWords)
+  }
+  let maxHitsInWindow = 0
+  for (let i = 0; i < totalWords; i += WINDOW_STEP_WORDS) {
+    const winStart = spans[i].start
+    const winEnd = spans[Math.min(totalWords - 1, i + WINDOW_WORDS - 1)].end
+    let hits = 0
+    for (const match of matchOffsets) {
+      if (match.start < winEnd && match.end > winStart) hits += 1
+    }
+    if (hits > maxHitsInWindow) maxHitsInWindow = hits
+  }
+  return densityFactor(maxHitsInWindow, WINDOW_WORDS)
+}
+
+// The blended density factor for one rule: the global density and the
+// peak-window density, weighted 0.35 / 0.65. For drafts of 100 words
+// or fewer the peak is the whole draft, so the blend is the global
+// density unchanged.
+export const blendedDensityFactor = (
+  matchOffsets: readonly RawMatch[],
+  spans: readonly WordSpan[],
+  words: number,
+): number =>
+  WINDOW_GLOBAL_WEIGHT * densityFactor(matchOffsets.length, words) +
+  WINDOW_PEAK_WEIGHT * peakWindowDensityFactor(matchOffsets, spans)
+
+// Sentence-level co-occurrence. When three or more distinct
+// phrase-rule groups fire in the same sentence, the signals are not
+// independent evidence — a boastful number inside a hype sentence
+// that also names a fake authority is one concentrated slop sentence,
+// not three unrelated tells — so that sentence's share of the penalty
+// is boosted by 25%. The factor is deliberately modest: it is a
+// confidence boost on co-occurring evidence, not a new severity, and
+// 1.25x keeps a single dense sentence from deciding a long draft on
+// its own. Only phrase-level groups (voice, claims, actions, format)
+// count: document-level rules span whole sentences or paragraphs, so
+// they are not sentence-local evidence and neither trigger the boost
+// nor contribute to it.
+export const COOCCURRENCE_MIN_GROUPS = 3
+export const COOCCURRENCE_MULTIPLIER = 1.25
+
+interface SentenceSpan {
+  start: number
+  end: number
+}
+
+// Sentences, with offsets in the scanned text. A period only ends a
+// sentence when whitespace or the end of the draft follows it, so
+// "99.9%" and "v2.0" do not split a sentence. Newlines are boundaries
+// too, so a heading or a list item is its own sentence. Table rows
+// and fenced code blocks are skipped. This mirrors the splitter the
+// rules themselves use, so a sentence here is a sentence there.
+const sentenceSpans = (text: string): SentenceSpan[] => {
+  const spans: SentenceSpan[] = []
+  let inFence = false
+  let offset = 0
+  for (const line of text.split('\n')) {
+    const lineStart = offset
+    const lineEnd = offset + line.length
+    offset = lineEnd + 1
+    const trimmed = line.trim()
+    const isFence = trimmed.startsWith('```')
+    if (isFence || inFence || trimmed.startsWith('|')) {
+      if (isFence) inFence = !inFence
+      continue
+    }
+    let start = lineStart
+    let i = 0
+    while (i < line.length) {
+      const ch = line[i]
+      if (ch === '.' || ch === '!' || ch === '?') {
+        const next = line[i + 1]
+        if (next === undefined || next === ' ' || next === '\t') {
+          const end = lineStart + i + 1
+          if (end > start) spans.push({ start, end })
+          start = end
+          while (start < lineEnd && (text[start] === ' ' || text[start] === '\t')) {
+            start += 1
+          }
+          i = start - lineStart
+          continue
+        }
+      }
+      i += 1
+    }
+    if (lineEnd > start) spans.push({ start, end: lineEnd })
+  }
+  return spans
+}
+
+// The co-occurrence boost for one analysis. Each phrase rule's penalty
+// is apportioned across sentences by its share of that rule's hits —
+// the blended penalty is not linear in hits, so this is an
+// approximation, and it is documented as one — and a sentence that
+// fires three or more distinct groups contributes an extra 25% of its
+// apportioned share.
+const cooccurrenceBoost = (
+  phraseRules: ReadonlyArray<{
+    rule: RuleDefinition
+    penalty: number
+    matches: RawMatch[]
+  }>,
+  scanned: string,
+): number => {
+  const sentences = sentenceSpans(scanned)
+  if (sentences.length === 0 || phraseRules.length === 0) return 0
+  const flat = phraseRules
+    .flatMap(({ rule, matches }) =>
+      matches.map((match) => ({ ruleId: rule.id, group: rule.group, start: match.start })),
+    )
+    .sort((a, b) => a.start - b.start)
+  if (flat.length === 0) return 0
+  // A match belongs to the sentence containing its start; a match
+  // starting in the gap between sentences belongs to the next one.
+  const groupsBySentence = sentences.map(() => new Set<GroupId>())
+  const sentenceOf = new Map<number, number>()
+  let s = 0
+  flat.forEach((match, index) => {
+    while (s < sentences.length - 1 && match.start >= sentences[s].end) s += 1
+    groupsBySentence[s].add(match.group)
+    sentenceOf.set(index, s)
+  })
+  const boosted = groupsBySentence.map((groups) => groups.size >= COOCCURRENCE_MIN_GROUPS)
+  if (!boosted.some(Boolean)) return 0
+  let extra = 0
+  for (const { rule, penalty, matches } of phraseRules) {
+    if (matches.length === 0 || penalty <= 0) continue
+    let boostedHits = 0
+    flat.forEach((match, index) => {
+      if (match.ruleId === rule.id && boosted[sentenceOf.get(index) ?? 0]) boostedHits += 1
+    })
+    extra += (COOCCURRENCE_MULTIPLIER - 1) * penalty * (boostedHits / matches.length)
+  }
+  return extra
 }
 
 export const verdictBands = [
@@ -127,6 +316,7 @@ export const analyze = (text: string): Analysis => {
       rulesHit: 0,
       words: 0,
       penalty: 0,
+      cooccurrenceBoost: 0,
       empty: true,
     }
   }
@@ -215,6 +405,16 @@ export const analyze = (text: string): Analysis => {
   let penalty = 0
   let hits = 0
   let rulesHit = 0
+  // Word spans in the scanned text, shared by the windowed density
+  // and the sentence-level co-occurrence boost below.
+  const spans = wordSpans(scanned)
+  // Phrase-rule penalties, for the co-occurrence boost: only rules
+  // without their own penaltyFor in a non-document group take part.
+  const phraseRules: Array<{
+    rule: RuleDefinition
+    penalty: number
+    matches: RawMatch[]
+  }> = []
 
   for (const rule of rules) {
     // Every hit is returned, not just the first forty per rule. A long
@@ -229,10 +429,17 @@ export const analyze = (text: string): Analysis => {
     hits += matches.length
     // Document-level rules (burstiness, type-token ratio) compute
     // their own penalty from the measured value; every other rule
-    // uses severity weight times the density factor.
-    penalty += rule.penaltyFor
+    // uses severity weight times the blended density factor — the
+    // global density and the worst 100-word window, 0.35 / 0.65 —
+    // so a sloppy passage cannot be washed out by clean filler.
+    const rulePenalty = rule.penaltyFor
       ? rule.penaltyFor(matches, words, scanned)
-      : severityWeight[rule.severity] * densityFactor(matches.length, words)
+      : severityWeight[rule.severity] *
+        blendedDensityFactor(matches, spans, words)
+    penalty += rulePenalty
+    if (!rule.penaltyFor && !DOCUMENT_GROUPS.has(rule.group)) {
+      phraseRules.push({ rule, penalty: rulePenalty, matches })
+    }
     counts[rule.severity] += matches.length
 
     const ruleFindings = matches.map((match) => {
@@ -266,6 +473,11 @@ export const analyze = (text: string): Analysis => {
       a.rule.label.localeCompare(b.rule.label),
   )
 
+  // A sentence where three or more distinct phrase-rule groups fire
+  // carries an extra 25% of its apportioned penalty share.
+  const boost = cooccurrenceBoost(phraseRules, scanned)
+  penalty += boost
+
   const score = scoreFromPenalty(penalty)
 
   return {
@@ -278,6 +490,7 @@ export const analyze = (text: string): Analysis => {
     rulesHit,
     words,
     penalty: Math.round(penalty * 100) / 100,
+    cooccurrenceBoost: Math.round(boost * 100) / 100,
     empty: false,
   }
 }
