@@ -64,12 +64,15 @@ Before → after (P1/fix2 baseline → P2), same probe texts:
 
 The example draft moved 6 → 9 because P2 no longer flags its single
 trailing dash ("- Jamie, CEO") at em-dash density; it is still
-Industrial slop. The fake-number variant moved 31 → 34 under current
+Industrial slop. The fake-number variant moved 15 → 22 under current
 scoring (the P2 table above still shows the pre-Stage-3 34 → 40); the
-rise is the adaptive floor alone, and the fake citation clears
+rise is the density change alone — the floor is now the draft's own
+length (20 → 29 words) — and the fake citation clears
 nothing — the trust-claim and unsourced-number flags are still on.
 The old 31 → 40 pair included one hit cleared by the pricing link
-(fixed 2026-11-15, F17).
+(fixed 2026-11-15, F17); the 31 → 34 pair was the old floor
+(44 → 50) under F17 (floor and 0.15/0.85 blend changed 2026-11-15,
+F21).
 
 ## Probe texts (paste verbatim)
 
