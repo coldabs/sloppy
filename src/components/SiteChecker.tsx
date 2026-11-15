@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { analyzeSiteAsync } from '../lib/analysisClient'
 import type { SiteAnalysis } from '../lib/siteAnalyzer'
 import {
+  apiError,
+  isTargetError,
   pickFetchMode,
   proxyUrl,
   resolveBaseUrl,
@@ -34,17 +36,27 @@ const writeConsent = (value: ProxyConsent) => {
   }
 }
 
-const responseError = async (response: Response) => {
+const responseError = async (response: Response): Promise<Error> => {
   try {
-    const body = (await response.json()) as { message?: unknown }
-    if (typeof body.message === 'string') return body.message
+    const body = (await response.json()) as { error?: unknown; message?: unknown }
+    if (typeof body.message === 'string') {
+      // Carry the server's error code (F43): the catch block tells a
+      // target the API correctly refused from an endpoint that failed.
+      return apiError(
+        body.message,
+        typeof body.error === 'string' ? body.error : undefined,
+      )
+    }
   } catch {
     // The response was not JSON, likely a static host without the API.
   }
   if (response.status === 404) {
-    return 'The fetch endpoint is not running. Start the app with npm run dev, or deploy the api/ routes.'
+    return apiError(
+      'The fetch endpoint is not running. Start the app with npm run dev, or deploy the api/ routes.',
+      'api-unavailable',
+    )
   }
-  return `The page could not be fetched (HTTP ${response.status}).`
+  return apiError(`The page could not be fetched (HTTP ${response.status}).`)
 }
 
 const parseJson = async <T,>(response: Response): Promise<T> => {
@@ -52,8 +64,9 @@ const parseJson = async <T,>(response: Response): Promise<T> => {
   try {
     return JSON.parse(text) as T
   } catch {
-    throw new Error(
+    throw apiError(
       'The page fetch API is not available on this deployment. Run the app with npm run dev, or deploy the api/ routes so live scans can work.',
+      'api-unavailable',
     )
   }
 }
@@ -251,7 +264,7 @@ export function SiteChecker() {
         const response = await fetch(`/api/fetch?url=${encodeURIComponent(target)}`, {
           signal,
         })
-        if (!response.ok) throw new Error(await responseError(response))
+        if (!response.ok) throw await responseError(response)
         const body = await parseJson<{ url: string; html: string }>(response)
         pageUrl = body.url
         html = body.html
@@ -269,10 +282,13 @@ export function SiteChecker() {
       setStatus('done')
     } catch (caught) {
       if (controller.signal.aborted) return
-      // The API answered health on mount but the fetch itself failed
-      // (timeout, rate-limit, endpoint down). Offer the proxy fallback
-      // instead of leaving the user stuck on a dead route.
-      if (mode === 'api') setApiFailed(true)
+      // Only the endpoint's own failure marks the API as failed
+      // (F43): a target the API correctly refused — a blocked
+      // private address, a timeout, a non-HTML target — is not the
+      // API failing, and must not push the user onto the proxy.
+      // Gated on the error code, not the HTTP status: /api/fetch
+      // maps target refusals to 502.
+      if (mode === 'api' && !isTargetError(caught)) setApiFailed(true)
       setStatus('error')
       setError(
         caught instanceof DOMException && caught.name === 'TimeoutError'
