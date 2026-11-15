@@ -8,10 +8,21 @@ let runCli
 try {
   ;({ runCli } = await import('../dist/cli/sloppy-lib.mjs'))
 } catch (caught) {
-  console.error(
-    'sloppy: the CLI bundle could not be loaded. Run `npm run build` first — it produces dist/cli/sloppy-lib.mjs.',
-  )
-  if (caught instanceof Error) console.error(caught.message)
+  const message = caught instanceof Error ? caught.message : ''
+  // Name the actual cause: a missing bundle means the build never
+  // ran, but a missing package means the install is incomplete —
+  // the old message blamed the build for both (F3).
+  const missingPackage = /Cannot find package '([^']+)'/.exec(message)?.[1]
+  if (missingPackage) {
+    console.error(
+      `sloppy: the CLI bundle needs the package '${missingPackage}', which is not installed. Run \`npm install\` in the sloppy directory.`,
+    )
+  } else {
+    console.error(
+      'sloppy: the CLI bundle could not be loaded. Run `npm run build` first — it produces dist/cli/sloppy-lib.mjs.',
+    )
+  }
+  if (message) console.error(message)
   process.exit(2)
 }
 
