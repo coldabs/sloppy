@@ -2,6 +2,7 @@
 
 import {
   countWordsIn,
+  likelyNonEnglish,
   sentenceSpans,
   wordsIn,
   type RawMatch,
@@ -59,6 +60,9 @@ const collectLengthRuns = (
 }
 
 const sameLengthSentences = (text: string): RawMatch[] => {
+  // Sentence rhythm is calibrated on English; a non-English draft
+  // is not judged on it (F33).
+  if (likelyNonEnglish(text)) return []
   // Dialogue lines are turns, not sentences on autopilot: a line
   // that opens with a dash ("— Bonjour") never counts toward a run
   // of same-length sentences.

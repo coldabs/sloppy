@@ -253,6 +253,103 @@ export const countWordsIn = (text: string): number => {
   return trimmed.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length
 }
 
+// Common function words in German, French, Spanish, Italian,
+// Portuguese, and Dutch. A word counts as non-English evidence only
+// when it is not also a common English word, so "in", "is", "no",
+// "as", "do", "met", "door", "over", "per", "a", "o", "e", "i", and
+// single letters are left out — they would count English text as
+// foreign. The sets are the most frequent function words, which are
+// the ones that show up in any paragraph. Tokens are matched with a
+// Unicode word pattern (not wordsIn, which folds diacritics away),
+// so "für", "über", "à", "não", and "è" count.
+// Sentence rhythm is calibrated on English (the diversity and
+// structure thresholds come from an English corpus), so the rhythm
+// rules do not judge a draft that is not English (F33). The
+// vocabulary and phrase rules are already English-only by their
+// word lists, and the em-dash and number rules fire on any text
+// because dashes and digits are not English.
+const NON_ENGLISH_FUNCTION_WORDS = new Set([
+  // German
+  'die', 'der', 'das', 'und', 'ist', 'sie', 'wir', 'bei', 'den', 'dem',
+  'des', 'eine', 'von', 'zu', 'mit', 'für', 'auf', 'im', 'es', 'er',
+  'ich', 'nicht', 'auch', 'als', 'nach', 'vor', 'über', 'sich', 'sind',
+  'haben', 'hat', 'wird', 'werden', 'kann', 'nur', 'noch', 'aus', 'an',
+  'zum', 'zur', 'sein', 'war', 'waren', 'schon', 'sehr', 'oder', 'aber',
+  'wenn', 'dann', 'dass', 'durch', 'gegen', 'ohne', 'unter', 'zwischen',
+  'bis', 'seit', 'seitdem', 'ganz', 'alle', 'kein', 'keine',
+  // French
+  'le', 'la', 'les', 'de', 'des', 'du', 'et', 'est', 'il', 'ils',
+  'elle', 'nous', 'vous', 'je', 'tu', 'un', 'une', 'dans', 'sur',
+  'pour', 'avec', 'qui', 'que', 'pas', 'plus', 'au', 'aux', 'en',
+  'sont', 'ont', 'être', 'avoir', 'ce', 'cette', 'ces', 'mon', 'ton',
+  'son', 'notre', 'votre', 'leur', 'mais', 'où', 'donc', 'car', 'ne',
+  'ça', 'cela', 'comme', 'tout', 'tous', 'toute', 'toutes', 'très',
+  'bien', 'mal', 'sans', 'sous', 'chez', 'entre', 'après', 'avant',
+  'depuis', 'pendant', 'contre', 'vers', 'par', 'à',
+  // Spanish
+  'el', 'los', 'las', 'es', 'un', 'del', 'se', 'por', 'con', 'su',
+  'al', 'lo', 'como', 'más', 'pero', 'sus', 'le', 'ya', 'este',
+  'esta', 'cuando', 'muy', 'sin', 'sobre', 'también', 'hasta', 'hay',
+  'donde', 'quien', 'desde', 'todo', 'nos', 'durante', 'uno', 'les',
+  'ni', 'eso', 'ante', 'ellos', 'esto', 'antes', 'algunos', 'qué',
+  'yo', 'otro', 'otras', 'otra', 'él', 'tanto', 'esa', 'estos',
+  'mucho', 'quienes', 'nada', 'muchos', 'cual', 'poco', 'ella',
+  'estar', 'estas', 'algunas', 'algo', 'nosotros', 'mi', 'mis', 'tú',
+  'te', 'ti', 'tu', 'tus',
+  // Italian
+  'gli', 'di', 'che', 'non', 'da', 'su', 'tra', 'fra', 'è', 'sono',
+  'uno', 'del', 'della', 'dei', 'degli', 'delle', 'alla', 'ai',
+  'agli', 'alle', 'nel', 'nella', 'nei', 'negli', 'nelle', 'sul',
+  'sulla', 'sui', 'sugli', 'sulle', 'ci', 'si', 'vi', 'ne', 'ma',
+  'più', 'anche', 'questo', 'questa', 'questi', 'queste', 'quello',
+  'quella', 'quelli', 'quelle', 'molto', 'tanto', 'tutto', 'tutti',
+  'tutta', 'tutte',
+  // Portuguese
+  'os', 'em', 'um', 'uma', 'uns', 'umas', 'dos', 'das', 'nos', 'nas',
+  'pelo', 'pela', 'pelos', 'pelas', 'aos', 'às', 'lhe', 'lhes', 'me',
+  'vos', 'ele', 'ela', 'eles', 'elas', 'eu', 'nós', 'vós', 'este',
+  'esse', 'essa', 'esses', 'essas', 'aquele', 'aquela', 'aqueles',
+  'aquelas', 'isto', 'isso', 'aquilo', 'não', 'sim', 'mais', 'pouco',
+  'todos', 'toda', 'outro', 'outra', 'outros', 'outras', 'mesmo',
+  'mesma', 'mesmos', 'mesmas', 'já', 'ainda', 'só', 'bem', 'quando',
+  'onde', 'porque', 'mas', 'nem', 'pois', 'então', 'assim', 'depois',
+  'agora', 'hoje', 'ontem', 'sempre', 'nunca', 'talvez', 'apenas',
+  'até', 'sob', 'após', 'através', 'sem',
+  // Dutch
+  'het', 'een', 'van', 'ik', 'te', 'dat', 'hij', 'niet', 'zijn',
+  'aan', 'als', 'voor', 'heeft', 'had', 'kunnen', 'maar', 'om',
+  'hem', 'dan', 'zou', 'mijn', 'dit', 'zo', 'ze', 'zich', 'bij',
+  'ook', 'tot', 'je', 'mij', 'uit', 'der', 'daar', 'hun', 'nu', 'en',
+])
+
+const ENGLISH_FUNCTION_WORDS = new Set([
+  'the', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'been',
+  'being', 'it', 'its', 'this', 'that', 'these', 'those', 'you', 'he',
+  'she', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my',
+  'your', 'his', 'our', 'their', 'in', 'on', 'at', 'to', 'of', 'for',
+  'with', 'by', 'from', 'as', 'into', 'over', 'under', 'after',
+  'before', 'between', 'through', 'during', 'without', 'about',
+  'against', 'not', 'no', 'do', 'does', 'did', 'have', 'has', 'had',
+  'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must',
+  'shall', 'am', 'if', 'then', 'than', 'so', 'such', 'only', 'own',
+  'same', 'too', 'very', 'just', 'also', 'more', 'most', 'other',
+  'some', 'any', 'each', 'few', 'now',
+])
+
+// True when the draft is likely not English: the non-English
+// function words outnumber the English ones, with at least three of
+// them. A single foreign word — a name, a quote, a loanword — does
+// not exempt a draft, and a tie defaults to English.
+export const likelyNonEnglish = (text: string): boolean => {
+  let nonEnglish = 0
+  let english = 0
+  for (const match of text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []) {
+    if (NON_ENGLISH_FUNCTION_WORDS.has(match)) nonEnglish += 1
+    else if (ENGLISH_FUNCTION_WORDS.has(match)) english += 1
+  }
+  return nonEnglish >= 3 && nonEnglish > english
+}
+
 // Paragraphs: blocks separated by a blank line. A single newline is a
 // line break inside a paragraph, not a new paragraph — a list of short
 // lines is one paragraph for the substance check.

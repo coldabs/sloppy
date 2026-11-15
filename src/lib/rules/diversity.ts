@@ -3,6 +3,7 @@
 import {
   countWordsIn,
   isFormalSentence,
+  likelyNonEnglish,
   paragraphSpans,
   sentenceIndexAt,
   sentenceSpans,
@@ -306,6 +307,10 @@ const longestAlternatingRun = (
 // penalty: the scan decides whether the signal fires, the penalty
 // scales with how far past the threshold the measurement sits.
 const burstinessScan = (text: string): RawMatch[] => {
+  // Sentence rhythm is calibrated on English; a non-English draft
+  // is not judged on it (F33). The penalty is only computed when
+  // the scan fires, so gating the scan gates the penalty too.
+  if (likelyNonEnglish(text)) return []
   const clean = stripFormalSentences(text)
   const words = countWordsIn(clean)
   if (words < BURSTINESS_MIN_WORDS) return []
