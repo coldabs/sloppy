@@ -344,13 +344,90 @@ const countWords = (text: string) => {
   return trimmed.split(/\s+/).length
 }
 
+// Fenced code blocks (```...``` or ~~~...~~~) and inline code spans
+// (`...`) are not prose: a listed word inside them is code, not a
+// claim (F23). They are blanked — every character except a line break
+// replaced with a space, same length — before the rules scan, so rule
+// offsets and the normaliser's offset map stay aligned and no finding
+// can start or end inside code. Newlines are kept, so the blanked
+// block still breaks paragraphs and sentences the way the fence did.
+// A fence opens at a line start (up to three leading spaces) and
+// closes on a line of the same character, at least as long, with no
+// info string; an unclosed fence runs to the end of the text. An
+// inline span is a run of backticks closed by the same run.
+export const blankCodeSpans = (text: string): string => {
+  const chars = text.split('')
+  const blank = (from: number, to: number): void => {
+    for (let i = from; i < to; i += 1) {
+      if (chars[i] !== '\n' && chars[i] !== '\r') chars[i] = ' '
+    }
+  }
+  const lines: Array<{ start: number; end: number }> = []
+  let pos = 0
+  while (pos <= text.length) {
+    const nl = text.indexOf('\n', pos)
+    const end = nl === -1 ? text.length : nl
+    lines.push({ start: pos, end })
+    if (nl === -1) break
+    pos = nl + 1
+  }
+  let i = 0
+  while (i < lines.length) {
+    const line = text.slice(lines[i].start, lines[i].end)
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(line)
+    if (!open) {
+      i += 1
+      continue
+    }
+    const marker = open[1][0]
+    const length = open[1].length
+    const close = new RegExp(`^ {0,3}${marker}{${length},}\\s*$`)
+    let j = i + 1
+    while (j < lines.length) {
+      if (close.test(text.slice(lines[j].start, lines[j].end))) break
+      j += 1
+    }
+    const endLine = j < lines.length ? j : lines.length - 1
+    blank(lines[i].start, lines[endLine].end)
+    i = endLine + 1
+  }
+  const blanked = chars.join('')
+  return blanked.replace(/(`+)([\s\S]*?)\1/g, (match) =>
+    match.replace(/[^\n\r]/g, ' '),
+  )
+}
+
 export const analyze = (text: string): Analysis => {
   // Rules run on the normalised text, so lookalike letters, invisible
   // characters and swapped dashes cannot hide a phrase. Every finding
   // is mapped back to its span in the original text, so the highlighted
   // copy the user sees is exactly what they pasted.
-  const { text: scanned, map } = normalizeForScan(text)
-  const words = countWords(text)
+  const { text: normalized, map } = normalizeForScan(text)
+  const totalWords = countWords(text)
+
+  if (totalWords === 0) {
+    return {
+      score: 100,
+      verdict: 'Nothing to score',
+      findings: [],
+      groups: [],
+      counts: { high: 0, medium: 0, low: 0 },
+      hits: 0,
+      rulesHit: 0,
+      words: 0,
+      penalty: 0,
+      cooccurrenceBoost: 0,
+      empty: true,
+      tooShort: false,
+    }
+  }
+
+  // Code is not prose (F23): fenced blocks and inline spans are
+  // blanked before the rules scan, and the word count below is the
+  // prose word count — the density is per prose word, not per code
+  // word. A draft that is only code has no prose to score.
+  const scanned = blankCodeSpans(normalized)
+  const words = countWords(scanned)
 
   if (words === 0) {
     return {
@@ -364,7 +441,7 @@ export const analyze = (text: string): Analysis => {
       words: 0,
       penalty: 0,
       cooccurrenceBoost: 0,
-      empty: true,
+      empty: false,
       tooShort: false,
     }
   }
