@@ -27,9 +27,13 @@ export const MAX_STYLESHEETS = 5
 // refused rather than scanned: the windowed density loop used to be
 // effectively quadratic, and an 8.9 MB draft never finished.
 export const MAX_CLI_INPUT_BYTES = 8 * 1024 * 1024
-// The CLI prints the version from package.json when it runs; this
-// fallback is only for tests and for a bundle run without it.
-export const CLI_VERSION_FALLBACK = '0.2.0'
+// The version is injected at build time from package.json (F6):
+// scripts/build-cli.mjs defines __SLOPPY_VERSION__ when it bundles
+// this module. Outside a built bundle (tests) the identifier does
+// not exist, and the typeof check below falls through safely —
+// `typeof` on a missing global is 'undefined', never a throw — so
+// there is no second hardcoded copy of the version to drift.
+declare const __SLOPPY_VERSION__: string | undefined
 
 export const USAGE = `sloppy — a local pattern checker for machine-made copy and websites.
 
@@ -384,7 +388,9 @@ export const runCli = async (
   io: CliIo = defaultIo(),
   opts: { version?: string } = {},
 ): Promise<number> => {
-  const version = opts.version ?? CLI_VERSION_FALLBACK
+  const version =
+    opts.version ??
+    (typeof __SLOPPY_VERSION__ !== 'undefined' ? __SLOPPY_VERSION__ : 'unknown')
   let options: CliOptions
   try {
     options = parseCliArgs(argv)
