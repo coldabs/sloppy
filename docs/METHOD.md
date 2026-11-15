@@ -298,11 +298,12 @@ of the same sizes.
   0.17–0.35; a ten-sentence run of same-length sentences measures
   0.08. The threshold is 0.12, with at least 10 sentences, at least
   80 words, and a mean sentence under 26 words. The mean cap was 16
-  until Stage 4, which missed the uniform 18–24-word cadence
-  entirely (a ten-sentence run at mean 19.7 with CV 0.099 now
-  fires); the minimum run rose from 8 to 10 with it, because eight
-  sentences at mean 17.8 with near-zero variance also occur in clean
-  filler (STRESS3 C22, eight PAD sentences, CV 0.024, pinned clean).
+  until the burstiness rule was widened, which had missed the uniform
+  18–24-word cadence entirely (a ten-sentence run at mean 19.7 with
+  CV 0.099 now fires); the minimum run rose from 8 to 10 with it,
+  because eight sentences at mean 17.8 with near-zero variance also
+  occur in clean filler (eight plain filler sentences, CV 0.024,
+  measured clean in the stress-test set, probe C22).
   A nine-sentence uniform run at mean 20 still escapes — the
   documented cost of keeping C22 clean. No published range was
   used: the ranges detector guides quote disagree with each other,
