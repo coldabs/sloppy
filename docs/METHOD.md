@@ -293,9 +293,14 @@ of the same sizes.
   sentences at mean 17.8 with near-zero variance also occur in clean
   filler (STRESS3 C22, eight PAD sentences, CV 0.024, pinned clean).
   A nine-sentence uniform run at mean 20 still escapes — the
-  documented cost of keeping C22 clean. The published range often
-  quoted for this measure (human 0.6–1.2, machine 0.2–0.4) does not
-  transfer to short drafts, so it was not used. Burstiness is
+  documented cost of keeping C22 clean. No published range was
+  used: the ranges detector guides quote disagree with each other,
+  and the largest direct measurement puts human academic writing
+  at a mean CV of 0.449 (AI rewrites 0.376) across 60,779 paired
+  texts (TextPulse Research 2026, "Sentence-Length Burstiness as a
+  Cross-Disciplinary and Cross-Model Signal of AI Rewriting") —
+  and clean text in this corpus measures 0.17–0.35. The threshold
+  was calibrated on the corpus instead. Burstiness is
   fragile: a draft with two long sentences and the rest short can
   measure high while still being repetitive, so the threshold is
   deliberately low and the rule is a supporting signal only.
@@ -320,12 +325,15 @@ of the same sizes.
   the low weight. Global repetition that MATTR no longer sees — the
   same twelve varied sentences repeated — is still caught by
   repeated-bigrams.
-- Em dash: published human writing runs about 3.7–10 pause-dashes per
-  1,000 words (a Twain-style passage in the corpus measures about
-  10 per 1,000 and scores 100). The rule fires above 20 per 1,000,
-  with at least 3 pause-dashes. That threshold is the corpus
-  calibration with the published human range as supporting evidence,
-  not a copy of another tool's threshold.
+- Em dash: published human essays run 0.33–17.12 em dashes per
+  1,000 words (mean 3.23, eight essays, 57,232 words; Freeburg
+  2026, "The Last Fingerprint", arXiv, March 2026), and a
+  Twain-style passage in the corpus measures about 10 per 1,000
+  and scores 100. The rule fires above 20 per 1,000 — above the
+  highest rate in that sample — with at least 3 pause-dashes. That
+  threshold is the corpus calibration with the published human
+  range as supporting evidence, not a copy of another tool's
+  threshold.
 - Vocabulary: the word lists are drawn from Kobak et al. 2024
   ("Quantifying Large Language Model Usage in Scientific
   Communication Through Excess Vocabulary", arXiv:2406.07016), which
