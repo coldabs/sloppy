@@ -132,7 +132,7 @@ The Licensor grants the Licensee a non-exclusive, non-transferable licence to us
 
 ### technical-docs
 ```
-Install the package with npm install sloppy. Run npx sloppy check draft.txt to score a file. The command prints a score from 0 to 100 and lists every matched phrase with its line number. Use the --json flag to print the result as JSON. The configuration file is sloppy.config.json in the project root. It accepts two keys: rules, a list of rule ids to enable, and threshold, the minimum score that passes the check. Exit code 0 means the draft passed; exit code 1 means it did not.
+Install the package with npm install @coldabs/sloppy. Run npx sloppy check draft.txt to score a file. The command prints a score from 0 to 100 and lists every matched phrase with its line number. Use the --json flag to print the result as JSON. The configuration file is sloppy.config.json in the project root. It accepts two keys: rules, a list of rule ids to enable, and threshold, the minimum score that passes the check. Exit code 0 means the draft passed; exit code 1 means it did not.
 ```
 
 ### literary-dash-200w
