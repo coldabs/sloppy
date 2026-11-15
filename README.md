@@ -144,6 +144,7 @@ Then:
 
 ```sh
 sloppy draft.txt                              # scan a file, JSON on stdout
+sloppy check draft.txt --json                 # same scan, as a subcommand
 cat draft.txt | sloppy                        # or read stdin
 sloppy --url https://example.com              # scan a website
 sloppy --url https://example.com --sarif      # GitHub Code Scanning SARIF
@@ -152,8 +153,29 @@ sloppy --threshold 90 draft.txt               # fail unless the score is 90+
 
 `sloppy` is the `bin` entry in `package.json`, so from the repo root
 `npx sloppy …` runs it (npm does not symlink a package's own bin into
-`node_modules/.bin`, but npx resolves it from `package.json`). The package stays
-`private`: the command is for local use and CI, not for publishing.
+`node_modules/.bin`, but npx resolves it from `package.json`). The package is
+no longer `private`, so it can be published to npm — `npm install sloppy`
+works once it is published (the release process is still to be decided).
+Until then, install it from a clone: `npm install`, then `npm run build`.
+
+### Configuration
+
+`sloppy.config.json` in the directory you run the command from sets
+defaults for the copy check:
+
+```json
+{
+  "rules": ["unsourced-number", "buzzwords"],
+  "threshold": 90
+}
+```
+
+`rules` is the list of copy rule ids to run (the full list is in
+`docs/METHOD.md`); `threshold` is the passing score. A `--threshold`
+flag on the command line wins over the config file. In a website scan
+the rules list filters the copy findings only — the structure and
+style rules always run. Unknown keys, unknown rule ids, and a
+threshold outside 0–100 are all errors, never silently ignored.
 
 ### Output
 
@@ -188,7 +210,7 @@ and fails one scoring 89. A score exactly at the threshold passes.
 - run: npm ci
 - run: npm run build
 - name: Gate landing-page copy
-  run: npx sloppy --threshold 70 --sarif copy/landing.txt > sloppy.sarif
+  run: npx sloppy check --threshold 70 --sarif copy/landing.txt > sloppy.sarif
 - name: Upload SARIF
   if: always()
   uses: github/codeql-action/upload-sarif@v3
