@@ -139,7 +139,9 @@ describe('F5: CLI input size cap', () => {
 
   it(
     'still scans a draft just under the cap',
-    { timeout: 60_000 },
+    // 120s: ~7.6 MB of regex work; 60s was too tight when the full
+    // suite runs in parallel.
+    { timeout: 120_000 },
     async () => {
       // ~7.6 MB of varied prose, under the cap: words drawn from a
       // 5,000-word pool in a fixed pseudo-random order, so no word
