@@ -344,15 +344,18 @@ of the same sizes.
   threshold is the corpus calibration with the published human
   range as supporting evidence, not a copy of another tool's
   threshold.
-- Vocabulary: the word lists are drawn from Kobak et al. 2024
-  ("Quantifying Large Language Model Usage in Scientific
-  Communication Through Excess Vocabulary", arXiv:2406.07016), which
-  measured excess vocabulary in more than 15 million PubMed abstracts
-  from 2010–2024 and found at least 13.5% of 2024 abstracts were
+- Vocabulary: the word lists are drawn from Kobak et al.
+  ("Delving into LLM-assisted writing in biomedical publications
+  through excess vocabulary", arXiv:2406.07016; published in Science
+  Advances 11(27), 2025, doi:10.1126/sciadv.adt3813), which measured
+  excess vocabulary in more than 15 million PubMed abstracts from
+  2010–2024 and found at least 13.5% of 2024 abstracts were
   LLM-processed (up to 40% in subcorpora), with "delve" used about
-  28 times its pre-LLM rate, and from Juzek & Ward 2024/2025
-  ("Don't Use a Cannon to Kill a Mosquito: Why an LLM Is Not an
-  AI-Text Detector", arXiv:2412.11385), which lists 21 focal words:
+  28 times its pre-LLM rate, and from Juzek & Ward
+  ("Why Does ChatGPT 'Delve' So Much? Exploring the Sources of
+  Lexical Overrepresentation in Large Language Models",
+  arXiv:2412.11385, doi:10.48550/arXiv.2412.11385; Proceedings of
+  COLING 2025, pp. 6397–6411), which lists 21 focal words:
   advancements, aligns, boasts, comprehending, delve(d/s/ving),
   emphasizing, garnered, groundbreaking, intricacies, intricate,
   realm, showcases, showcasing, surpasses, surpassing, underscore(s),
