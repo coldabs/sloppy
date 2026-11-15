@@ -130,11 +130,17 @@ const accessibleName = (doc: Document, element: Element) => {
 
   const labelledBy = element.getAttribute('aria-labelledby')
   if (labelledBy) {
-    const target = doc.getElementById(labelledBy)
-    if (target) {
-      const text = textOf(target)
-      if (text) return text
-    }
+    // aria-labelledby takes a space-separated list of ids, and the
+    // accessible name is their text joined (F39): passing the whole
+    // string to getElementById looked for an id containing a space,
+    // which cannot exist, so every multi-id control was wrongly
+    // flagged unnamed. An id that does not exist is skipped.
+    const text = labelledBy
+      .split(/\s+/)
+      .map((id) => textOf(doc.getElementById(id)))
+      .filter(Boolean)
+      .join(' ')
+    if (text) return text
   }
 
   const text = textOf(element)
