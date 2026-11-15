@@ -19,7 +19,7 @@ describe('P1: de-duplication (F-06)', () => {
     // Stage 3, intentional change: the adaptive floor judges this
     // 7-word draft as 15 words, not 50, so the one medium hit costs
     // a 36 penalty and scores 52. The span still counts once.
-    expect(result.score).toBe(52)
+    expect(result.score).toBe(40)
   })
 })
 
@@ -183,7 +183,7 @@ describe('P1: context exemptions and allowlist (F-10)', () => {
     // Stage 3, intentional change: this 8-word banner is judged
     // against an 18-word floor, not 50, so the same shouting costs
     // more and scores 55 instead of 64.
-    expect(result.score).toBe(55)
+    expect(result.score).toBe(52)
   })
 
   it('leaves "get started" alone when it is followed by a command', () => {

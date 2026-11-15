@@ -19,11 +19,13 @@ describe('F19: boundary slop coverage', () => {
   const ruleIds = (text: string) =>
     analyze(text).findings.map((f) => f.ruleId)
 
+  // F21 (2026-11-15): C25 69 -> 60 and C27 81 -> 71 — both texts
+  // are short, so the own-length floor makes the same hits denser.
   it('flags urgency and scarcity wording (C25)', () => {
     const text =
       'AMAZING deal, only today, while stocks last, so hurry and grab yours now.'
     const result = analyze(text)
-    expect(result.score).toBe(69)
+    expect(result.score).toBe(60)
     expect(ruleIds(text).filter((id) => id === 'urgency-scarcity')).toHaveLength(3)
   })
 
@@ -31,7 +33,7 @@ describe('F19: boundary slop coverage', () => {
     const text =
       'This is amazing \u{1F600}\u{1F600}\u{1F600} and everyone loves it so much today.'
     const result = analyze(text)
-    expect(result.score).toBe(81)
+    expect(result.score).toBe(71)
     expect(ruleIds(text)).toContain('hype-punctuation')
   })
 

@@ -10,13 +10,16 @@ describe('F17: fake-citation bypass', () => {
   const base =
     'Our platform delivers 99.9% uptime and serves 10,000 happy users. We grew 500% last year and our accuracy is 99%.'
 
+  // F21 (2026-11-15): the pair is 15 -> 22 now — the floor is the
+  // draft's own length (20 -> 29 words), not 44 -> 50. The citation
+  // still clears nothing; the rise is the density change alone.
   it('does not let a pricing link plus the word "report" clear a hit', () => {
     const cited =
       'Our platform delivers 99.9% uptime and serves 10,000 happy users. We grew 500% last year and our accuracy is 99%, according to a 2024 report. See https://example.com/pricing for details.'
     const baseResult = analyze(base)
     const citedResult = analyze(cited)
-    expect(baseResult.score).toBe(31)
-    expect(citedResult.score).toBe(34)
+    expect(baseResult.score).toBe(15)
+    expect(citedResult.score).toBe(22)
     expect(citedResult.findings).toHaveLength(baseResult.findings.length)
     expect(
       citedResult.findings.filter((f) => f.ruleId === 'unsourced-number'),
@@ -35,7 +38,7 @@ describe('F17: fake-citation bypass', () => {
     const real =
       'Our platform delivers 99.9% uptime and serves 10,000 happy users. We grew 500% last year and our accuracy is 99%. Full details in the 2024 survey at https://example.com/reports/survey-2024.'
     const result = analyze(real)
-    expect(result.score).toBe(48)
+    expect(result.score).toBe(32)
     expect(
       result.findings.filter((f) => f.ruleId === 'unsourced-number'),
     ).toHaveLength(1)
@@ -45,7 +48,7 @@ describe('F17: fake-citation bypass', () => {
     const named =
       'Our platform delivers 99.9% uptime and serves 10,000 happy users. We grew 500% last year and our accuracy is 99%, according to the 2024 Gartner survey.'
     const result = analyze(named)
-    expect(result.score).toBe(40)
+    expect(result.score).toBe(23)
     expect(
       result.findings.filter((f) => f.ruleId === 'unsourced-number'),
     ).toHaveLength(2)

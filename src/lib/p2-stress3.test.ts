@@ -3,7 +3,7 @@
 // only (band 'any'); bands are pinned after the measured scores are in.
 // Never edit engine code to make a probe pass — fix the probe instead.
 import { describe, expect, it } from 'vitest'
-import { analyze } from './analyzer'
+import { analyze, MIN_SCORE_WORDS } from './analyzer'
 import { exampleDraft } from './exampleDraft'
 import {
   AI_ADJECTIVE_PHRASES,
@@ -155,7 +155,8 @@ export const evasionProbes: Probe[] = [
     id: 'A12',
     group: 'evasion',
     text: 'We grew 500% last year. The market was strong, the team was focused, and the roadmap was clear, according to the 2024 Gartner report.',
-    band: 'mostly',
+    // F21 (2026-11-15): the 24-word draft is judged at 24 words, not 50, so the same single unsourced-number hit scores 62, not ~76. The Gartner citation is in another sentence, so it still does not clear the number.
+    band: 'slop',
     focus: 'unsourced-number',
   },
   {
@@ -425,7 +426,9 @@ export const falsePositiveProbes: Probe[] = [
     id: 'B20',
     group: 'false-positive',
     text: 'Best day ever!!!',
-    band: 'mostly',
+    // F21 (2026-11-15): three words — too short to score, so no
+    // band applies; the recorder asserts the verdict instead.
+    band: 'any',
     focus: 'hype-punctuation',
   },
   {
@@ -611,7 +614,8 @@ export const falseNegativeProbes: Probe[] = [
     id: 'C10',
     group: 'false-negative',
     text: 'Studies have shown that rest helps, according to the 2024 WHO report. Experts agree that sleep matters, says Dr. Rao at MIT. Research suggests that water helps.',
-    band: 'mostly',
+    // F21 (2026-11-15): the 27-word draft is judged at 27 words, not 50, so the same single fake-authority hit scores 64, not 76.
+    band: 'slop',
     focus: 'fake-authority',
   },
   {
@@ -621,7 +625,11 @@ export const falseNegativeProbes: Probe[] = [
       'The plan is simple — we ship on Friday. The launch is ready — and the team is set. The work is done — and the notes are out.',
       200,
     ),
-    band: 'clean',
+// F21 (2026-11-15): 90 -> 89 — one point, from the 0.15/0.85
+    // blend raising the repeated-bigrams penalty on the padding.
+    // The em-dash focus is still silent; the probe sits on the
+    // clean boundary either way.
+    band: 'mostly',
     focus: 'em-dash',
   },
   {
@@ -645,7 +653,8 @@ export const falseNegativeProbes: Probe[] = [
     id: 'C13b',
     group: 'false-negative',
     text: 'Our platform is efficient, scalable, and reliable. The tool is fast, secure, and simple. The service is modern, smart, and flexible.',
-    band: 'mostly',
+    // F21 (2026-11-15): the 21-word draft is judged at 21 words, not 46, so the same three rule-of-three hits score 65, not ~76.
+    band: 'slop',
     focus: 'rule-of-three',
   },
   {
@@ -687,7 +696,8 @@ export const falseNegativeProbes: Probe[] = [
     id: 'C19',
     group: 'false-negative',
     text: 'The key is to find balance. True growth comes from within. The report was filed on Tuesday. The team met in March. The budget was approved on Friday. The notes went out the same day.',
-    band: 'mostly',
+    // F21 (2026-11-15): the 35-word draft is judged at 35 words, not 50, so the same hits score 65, not ~76.
+    band: 'slop',
     focus: 'pseudo-wisdom',
   },
   {
@@ -759,7 +769,8 @@ export const falseNegativeProbes: Probe[] = [
     // product so much"), so this is mostly clean, not clean. It was
     // pinned clean only because the cliche was missed at 100.
     text: 'I love this product so much, it is wonderful and I use it every single day.',
-    band: 'mostly',
+    // F21 (2026-11-15): the 17-word draft is judged at 17 words, not 37, so the testimonial cliche scores 53, not 70. (F20 re-pinned this clean -> mostly at 70; the floor moves it again.)
+    band: 'slop',
     focus: 'testimonial-cliche',
   },
   {
@@ -787,7 +798,8 @@ export const falseNegativeProbes: Probe[] = [
     id: 'C32',
     group: 'false-negative',
     text: 'This is the best thing ever, and I cannot stop talking about it to my friends.',
-    band: 'mostly',
+    // F21 (2026-11-15): the 16-word draft is judged at 16 words, not 35, so the same vague-superlative hit scores 53, not ~70.
+    band: 'slop',
     focus: 'vague-superlative',
   },
   {
@@ -1056,7 +1068,16 @@ describe('stress test 3 (P2)', () => {
       console.log(
         `${probe.id} | ${result.words} | ${result.score} | ${result.verdict} | ${rules || '-'}`,
       )
-      if (!bandOk(result.score, probe.band)) {
+      // F21 (2026-11-15): a probe under MIN_SCORE_WORDS has no
+      // meaningful score — the verdict is "Too short to score", and
+      // the band is not asserted. (B20, three words.)
+      if (result.words < MIN_SCORE_WORDS) {
+        if (result.verdict !== 'Too short to score') {
+          failures.push(
+            `${probe.id}: verdict ${result.verdict}, expected Too short to score`,
+          )
+        }
+      } else if (!bandOk(result.score, probe.band)) {
         failures.push(
           `${probe.id}: score ${result.score} not in band ${probe.band}`,
         )

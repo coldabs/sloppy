@@ -15,7 +15,7 @@ describe('F22: curly apostrophes', () => {
     // The audit recorded 62 for the straight version on an older
     // engine; the current engine scores it 48. What matters is that
     // curly and straight now agree exactly.
-    expect(a.score).toBe(48)
+    expect(a.score).toBe(40)
     expect(b.score).toBe(a.score)
     expect(c.score).toBe(a.score)
     expect(b.penalty).toBe(a.penalty)

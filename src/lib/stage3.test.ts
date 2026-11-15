@@ -22,7 +22,9 @@ import {
 // The audit's hero shape: a sloppy 49-word hero section. Appending
 // ~1,000 clean words used to wash it out (score 9 -> 79, penalty
 // 133.53 -> 12.98, a 90.3% penalty dilution); the peak window holds
-// the hero's density, so the padded version now scores 33.
+// the hero's density, so the padded version now scores 25 (F21: the
+// floor is the draft's own length, so the hero penalty is 135.09,
+// and the 0.15/0.85 blend holds the padded penalty at 76.13).
 const HERO =
   'Revolutionary AI-powered platform with military-grade encryption. ' +
   'Our next-generation technology will supercharge your workflow and leverage synergies across your whole team. ' +
@@ -50,35 +52,52 @@ const cleanFiller = (targetWords: number): string => {
 }
 
 describe('stage 3: adaptive floor', () => {
-  it('scales from 12 up to the 50-word cap', () => {
+  it('scales from 8 up to the 50-word cap', () => {
+    // F21 (2026-11-15): the floor is the draft's own length, minimum
+    // MIN_SCORE_WORDS (8), cap 50. The old floor inflated a 21-word
+    // draft to 46 words, so adding clean words washed a single hit out.
     expect(adaptiveFloorWords(0)).toBe(1)
-    expect(adaptiveFloorWords(1)).toBe(12)
-    expect(adaptiveFloorWords(5)).toBe(12)
-    expect(adaptiveFloorWords(6)).toBe(13)
-    expect(adaptiveFloorWords(22)).toBe(48)
-    expect(adaptiveFloorWords(23)).toBe(50)
+    expect(adaptiveFloorWords(1)).toBe(8)
+    expect(adaptiveFloorWords(5)).toBe(8)
+    expect(adaptiveFloorWords(6)).toBe(8)
+    expect(adaptiveFloorWords(22)).toBe(22)
+    expect(adaptiveFloorWords(23)).toBe(23)
     expect(adaptiveFloorWords(50)).toBe(50)
     expect(adaptiveFloorWords(500)).toBe(50)
   })
 
   it('scores a one-word buzzword draft far below the old floor score', () => {
     // The flat 50-word floor scored "seamless" 76 ("Mostly clean").
-    // The adaptive floor judges one word as 12 words, so the same
-    // single medium hit costs a 40.91 penalty and scores 48.
+    // F21 (2026-11-15): one word is judged as 8 words, so the single
+    // medium hit costs a 50.00 penalty and scores 40 — but the verdict
+    // is "Too short to score": one listed word is not a sloppy draft,
+    // and the number is not meaningful.
     const result = analyze('seamless')
-    expect(result.score).toBe(48)
-    expect(result.penalty).toBeCloseTo(40.91, 2)
+    expect(result.score).toBe(40)
+    expect(result.penalty).toBeCloseTo(50.0, 2)
+    expect(result.tooShort).toBe(true)
+    expect(result.verdict).toBe('Too short to score')
   })
 
-  it('scores short taglines by their own length, not as 50 words', () => {
-    expect(analyze('Our seamless platform launches today').score).toBe(48)
-    expect(analyze('Our seamless platform launches today now').score).toBe(49)
+  it('scores short taglines at the minimum, not as 50 words', () => {
+    // F21 (2026-11-15): a 5- or 6-word tagline is judged as 8 words
+    // (the minimum), not 50 — and both are under MIN_SCORE_WORDS, so
+    // the verdict is "Too short to score", not a band.
+    const five = analyze('Our seamless platform launches today')
+    const six = analyze('Our seamless platform launches today now')
+    expect(five.score).toBe(40)
+    expect(five.verdict).toBe('Too short to score')
+    expect(six.score).toBe(40)
+    expect(six.verdict).toBe('Too short to score')
   })
 
-  it('leaves drafts at or above the floor cap where they were', () => {
-    // At 23 words the floor is already 50, so the density factor is
-    // the old one: one medium hit costs 15 penalty and scores 76.
-    expect(densityFactor(1, 23)).toBeCloseTo(1.6667, 4)
+  it('caps the floor at 50 words for long drafts', () => {
+    // F21 (2026-11-15): at 23 words the floor is 23 (the draft's own
+    // length), so one hit per 23 words is a 3.0303 factor. At and
+    // above the 50-word cap the density factor is the old one: one
+    // hit per 50 words is 1.6667, one per 100 words is 0.9091.
+    expect(densityFactor(1, 23)).toBeCloseTo(3.0303, 4)
+    expect(densityFactor(1, 50)).toBeCloseTo(1.6667, 4)
     expect(densityFactor(1, 100)).toBeCloseTo(0.9091, 4)
   })
 })
@@ -87,8 +106,11 @@ describe('stage 3: sliding-window peak scoring', () => {
   it('pins the window constants', () => {
     expect(WINDOW_WORDS).toBe(100)
     expect(WINDOW_STEP_WORDS).toBe(25)
-    expect(WINDOW_GLOBAL_WEIGHT).toBe(0.35)
-    expect(WINDOW_PEAK_WEIGHT).toBe(0.65)
+    // F21 (2026-11-15): the peak carries more of the blend, so a
+    // sloppy passage is washed out less by clean filler (the 12-hit
+    // dilution falls from 28.1% to 12.0%).
+    expect(WINDOW_GLOBAL_WEIGHT).toBe(0.15)
+    expect(WINDOW_PEAK_WEIGHT).toBe(0.85)
   })
 
   it('holds the peak window when a sloppy hero is padded with clean words', () => {
@@ -99,13 +121,15 @@ describe('stage 3: sliding-window peak scoring', () => {
     // Same 16 hits in both. Before stage 3 the penalty fell 90.3%
     // (133.53 -> 12.98) and the score rose 9 -> 79; now the worst
     // 100-word window carries the hero, so the penalty falls only
-    // 54.1% (133.53 -> 61.27) and the score rises 9 -> 33 — still
-    // Heavy slop, not Mostly clean.
+    // 43.6% (135.09 -> 76.13) and the score rises 9 -> 25 — still
+    // Heavy slop, not Mostly clean. (F21: the hero penalty is 135.09
+    // because the floor is the draft's own 49 words, and the 0.15 /
+    // 0.85 blend holds the padded penalty higher than the old 61.27.)
     expect(hero.score).toBe(9)
-    expect(hero.penalty).toBeCloseTo(133.53, 2)
+    expect(hero.penalty).toBeCloseTo(135.09, 2)
     expect(padded.hits).toBe(hero.hits)
-    expect(padded.penalty).toBeCloseTo(61.27, 2)
-    expect(padded.score).toBe(33)
+    expect(padded.penalty).toBeCloseTo(76.13, 2)
+    expect(padded.score).toBe(25)
     expect((hero.penalty - padded.penalty) / hero.penalty).toBeLessThan(0.6)
   })
 
@@ -159,12 +183,14 @@ describe('stage 3: sliding-window peak scoring', () => {
     )
   })
 
-  it('does not let added words alone raise the score of a floor-saturated draft', () => {
-    // The fake-citation shape from HEAD-TO-HEAD.md, at 28 words, so
-    // the floor is already capped at 50 in both versions. The
+  it('added words change the score only by density, never by clearing a hit', () => {
+    // The fake-citation shape from HEAD-TO-HEAD.md, at 28 words. The
     // citation sits two sentences away from every number, so no hit
-    // is cleared by it either: same 4 findings, same penalty, same
-    // score. Added words alone change nothing.
+    // is cleared by it: same 4 findings in both. F21 (2026-11-15):
+    // the floor is now the draft's own length (28 -> 38 words), so
+    // the longer draft is honestly less dense and scores higher
+    // (21 -> 28) — the old version of this test pinned identical
+    // scores because both versions were capped at a 50-word floor.
     const base =
       'Our platform delivers 99.9% uptime and serves 10,000 happy users every single day. We grew 500% last year and our accuracy is 99% across every region we serve.'
     const cited =
@@ -172,29 +198,31 @@ describe('stage 3: sliding-window peak scoring', () => {
       ' The report is long and detailed. See https://example.com/pricing for details.'
     const baseResult = analyze(base)
     const citedResult = analyze(cited)
-    expect(baseResult.score).toBe(34)
-    expect(citedResult.score).toBe(baseResult.score)
-    expect(citedResult.penalty).toBe(baseResult.penalty)
+    expect(baseResult.score).toBe(21)
+    expect(citedResult.score).toBe(28)
+    expect(citedResult.penalty).toBeLessThan(baseResult.penalty)
     expect(citedResult.findings).toHaveLength(baseResult.findings.length)
+    expect(citedResult.findings).toHaveLength(4)
   })
 
   it('does not let a fake citation clear a hit', () => {
-    // The 20-word base scores 31 and the 29-word cited version 34.
-    // The rise is the adaptive floor alone (44 to 50 as the draft
-    // grows past the ramp): the fake citation — "according to a 2024
-    // report" plus a pricing link — clears nothing, so both versions
-    // have the same 4 findings and the same three unsourced-number
-    // hits. The old 31 -> 40 pair was the floor rise plus one hit
-    // cleared by the pricing link, because the word "report" sat
-    // next to it (fixed 2026-11-15, F17).
+    // The 20-word base scores 15 and the 29-word cited version 22.
+    // The rise is the density change alone (the floor is the draft's
+    // own length, 20 -> 29 words): the fake citation — "according to
+    // a 2024 report" plus a pricing link — clears nothing, so both
+    // versions have the same 4 findings and the same three
+    // unsourced-number hits. The old 31 -> 40 pair was the floor rise
+    // plus one hit cleared by the pricing link, because the word
+    // "report" sat next to it (fixed 2026-11-15, F17); the 31 -> 34
+    // pair was the old floor (44 -> 50) under F17.
     const base =
       'Our platform delivers 99.9% uptime and serves 10,000 happy users. We grew 500% last year and our accuracy is 99%.'
     const cited =
       'Our platform delivers 99.9% uptime and serves 10,000 happy users. We grew 500% last year and our accuracy is 99%, according to a 2024 report. See https://example.com/pricing for details.'
     const baseResult = analyze(base)
     const citedResult = analyze(cited)
-    expect(baseResult.score).toBe(31)
-    expect(citedResult.score).toBe(34)
+    expect(baseResult.score).toBe(15)
+    expect(citedResult.score).toBe(22)
     expect(citedResult.findings).toHaveLength(baseResult.findings.length)
     expect(citedResult.penalty).toBeLessThan(baseResult.penalty)
   })
@@ -204,19 +232,21 @@ describe('stage 3: sentence-level co-occurrence multiplier', () => {
   it('boosts a sentence where three distinct groups fire', () => {
     // Same three signals — buzzwords (voice), trust-claim (claims),
     // generic-cta (actions) — in one sentence vs spread across three.
-    // The single dense sentence scores 24 with a 15.87 boost; spread
-    // out, the same signals score 37 with no boost.
+    // The single dense sentence scores 8 with a 28.45 boost; spread
+    // out, the same signals score 17 with no boost. (F21: the 19-word
+    // draft is judged at 19 words, not 42, so the dense sentence is
+    // far denser than under the old floor — 24 and 37 then.)
     const inOne = analyze(
       'Our revolutionary platform delivers 99.9% uptime, so get started now! The team met on Monday to review the plan.',
     )
     const spread = analyze(
       'Our revolutionary platform is ready. It delivers 99.9% uptime for every customer. Get started now! The team met on Monday to review the plan.',
     )
-    expect(inOne.cooccurrenceBoost).toBeCloseTo(15.87, 2)
-    expect(inOne.penalty).toBeCloseTo(79.33, 2)
-    expect(inOne.score).toBe(24)
+    expect(inOne.cooccurrenceBoost).toBeCloseTo(28.45, 2)
+    expect(inOne.penalty).toBeCloseTo(142.24, 2)
+    expect(inOne.score).toBe(8)
     expect(spread.cooccurrenceBoost).toBe(0)
-    expect(spread.score).toBe(37)
+    expect(spread.score).toBe(17)
     expect(inOne.score).toBeLessThan(spread.score)
   })
 
@@ -226,7 +256,9 @@ describe('stage 3: sentence-level co-occurrence multiplier', () => {
       'Our revolutionary platform delivers 99.9% uptime for every customer. The team met on Monday to review the plan.',
     )
     expect(result.cooccurrenceBoost).toBe(0)
-    expect(result.score).toBe(42)
+    // F21: the 18-word draft is judged at 18 words, not 40, so the
+    // same two signals score 21, not 42.
+    expect(result.score).toBe(21)
   })
 
   it('does not boost a sloppy hero whose sentences fire at most two groups', () => {

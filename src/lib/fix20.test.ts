@@ -10,9 +10,12 @@ describe('F20: not-just across sentences', () => {
   const ruleIds = (text: string) =>
     analyze(text).findings.map((f) => f.ruleId)
 
+  // F21 (2026-11-15): the 13-word cadence scores 74, not 84, and
+  // the 15-word testimonial 39, not 54 — the own-length floor makes
+  // the same hits denser. The findings are unchanged.
   it('flags the cross-sentence cadence', () => {
     const text = 'This is not just a tool. It is a whole new way of working.'
-    expect(analyze(text).score).toBe(84)
+    expect(analyze(text).score).toBe(74)
     expect(ruleIds(text)).toContain('not-just')
   })
 
@@ -46,7 +49,7 @@ describe('F20: not-just across sentences', () => {
     const text =
       'I love this product so much. It is the best thing I have ever used.'
     const result = analyze(text)
-    expect(result.score).toBe(54)
+    expect(result.score).toBe(39)
     expect(
       ruleIds(text).filter((id) => id === 'testimonial-cliche'),
     ).toHaveLength(2)

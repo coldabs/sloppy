@@ -50,6 +50,14 @@ export interface Analysis {
   // because there is nothing to score, and the verdict says so: an
   // empty draft is not "Clean enough".
   empty: boolean
+  // True when the draft is too short to score (1 to MIN_SCORE_WORDS - 1
+  // words). The score is still the computed number, so machine
+  // consumers (the CLI threshold, the benchmark) keep working, but
+  // the verdict says the number is not meaningful: a one-word draft
+  // is not "Slop creeping in", it is too little evidence to judge.
+  // The findings are still listed — the hit is real, the verdict is
+  // about the score, not the hit.
+  tooShort: boolean
 }
 
 const EXCERPT_PAD = 34
@@ -70,25 +78,37 @@ const DOCUMENT_GROUPS = new Set<GroupId>([
 // repeating one phrase costs more than saying it twice, but never
 // without limit.
 //
+// A draft shorter than MIN_SCORE_WORDS is too little evidence to
+// judge: the verdict is "Too short to score" and the score is not
+// meaningful (F21). The old one-word verdict, "Slop creeping in" at
+// 48, was indefensible UX — one listed word is not a sloppy draft.
+export const MIN_SCORE_WORDS = 8
+
 // The density is measured twice and blended: once over the whole
 // draft, once over the worst 100-word sliding window (step 25 words),
-// combined as 0.35 * global + 0.65 * peak. A sloppy hero followed by
+// combined as 0.15 * global + 0.85 * peak. A sloppy hero followed by
 // a thousand clean words still scores as slop, because the peak
 // window holds the hero's density while the global term only softens
 // it. A short draft is scored against an adaptive floor instead of a
-// flat 50 words: the floor is min(50, max(12, round(words * 2.2))),
-// so a one-word draft is judged as 12 words, not 50, and a five-word
-// tagline as 12 too, scaling smoothly up to 50 words at 23 words.
+// flat 50 words: the floor is the draft's own length, with a minimum
+// of MIN_SCORE_WORDS and a cap of 50 — so an 8-word draft is judged
+// as 8 words and a 21-word draft as 21, not as 46. The old floor
+// (min(50, max(12, round(words * 2.2)))) inflated a 21-word draft
+// to 46 words, so adding 20 clean words to one "seamless" moved the
+// score from 48 to 75 and the hit all but disappeared (F21).
 export const DENSITY_FLOOR_WORDS = 50
 export const DENSITY_SATURATION = 10
 export const WINDOW_WORDS = 100
 export const WINDOW_STEP_WORDS = 25
-export const WINDOW_GLOBAL_WEIGHT = 0.35
-export const WINDOW_PEAK_WEIGHT = 0.65
+export const WINDOW_GLOBAL_WEIGHT = 0.15
+export const WINDOW_PEAK_WEIGHT = 0.85
 
 export const adaptiveFloorWords = (words: number): number => {
   if (words <= 0) return 1
-  return Math.min(DENSITY_FLOOR_WORDS, Math.max(12, Math.round(words * 2.2)))
+  return Math.min(
+    DENSITY_FLOOR_WORDS,
+    Math.max(MIN_SCORE_WORDS, words),
+  )
 }
 
 export const densityFactor = (hits: number, words: number): number => {
@@ -173,7 +193,7 @@ export const peakWindowDensityFactor = (
 }
 
 // The blended density factor for one rule: the global density and the
-// peak-window density, weighted 0.35 / 0.65. For drafts of 100 words
+// peak-window density, weighted 0.15 / 0.85. For drafts of 100 words
 // or fewer the peak is the whole draft, so the blend is the global
 // density unchanged.
 export const blendedDensityFactor = (
@@ -345,6 +365,7 @@ export const analyze = (text: string): Analysis => {
       penalty: 0,
       cooccurrenceBoost: 0,
       empty: true,
+      tooShort: false,
     }
   }
 
@@ -457,7 +478,7 @@ export const analyze = (text: string): Analysis => {
     // Document-level rules (burstiness, type-token ratio) compute
     // their own penalty from the measured value; every other rule
     // uses severity weight times the blended density factor — the
-    // global density and the worst 100-word window, 0.35 / 0.65 —
+    // global density and the worst 100-word window, 0.15 / 0.85 —
     // so a sloppy passage cannot be washed out by clean filler.
     const rulePenalty = rule.penaltyFor
       ? rule.penaltyFor(matches, words, scanned)
@@ -508,10 +529,11 @@ export const analyze = (text: string): Analysis => {
   penalty += boost
 
   const score = scoreFromPenalty(penalty)
+  const tooShort = words > 0 && words < MIN_SCORE_WORDS
 
   return {
     score,
-    verdict: verdictFor(score),
+    verdict: tooShort ? 'Too short to score' : verdictFor(score),
     findings,
     groups,
     counts,
@@ -521,6 +543,7 @@ export const analyze = (text: string): Analysis => {
     penalty: Math.round(penalty * 100) / 100,
     cooccurrenceBoost: Math.round(boost * 100) / 100,
     empty: false,
+    tooShort,
   }
 }
 

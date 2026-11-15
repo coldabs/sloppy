@@ -189,7 +189,9 @@ describe('polish: F-48 any uncited authority claim fires', () => {
     const text =
       'Studies have shown that rest helps, according to the 2024 WHO report. Experts agree that sleep matters, says Dr. Rao at MIT. Research suggests that water helps.'
     expect(ruleIds(text)).toContain('fake-authority')
-    expect(score(text)).toBe(76)
+    // F21 (2026-11-15): the 27-word draft is judged at 27 words,
+    // not 50, so the same single hit scores 64, not 76.
+    expect(score(text)).toBe(64)
   })
 })
 
@@ -234,7 +236,9 @@ describe('polish: F-50 per-sentence formal register', () => {
     // point stands: the two legal sentences do not exempt the rest).
     expect(ruleIds(draft)).not.toContain('low-ttr')
     expect(ruleIds(draft)).toContain('repeated-bigrams')
-    expect(score(draft)).toBe(53)
+    // F21 (2026-11-15): the 0.15/0.85 blend moves the long legal
+    // draft one point, 53 -> 52.
+    expect(score(draft)).toBe(52)
   })
 
   it('still leaves a clean legal paragraph alone', () => {

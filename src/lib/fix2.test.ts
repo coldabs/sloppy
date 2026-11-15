@@ -63,7 +63,7 @@ describe('fix2: F-20 one claim counts once', () => {
     // against a 12-word floor, not 50, so the one high hit costs a
     // 68.18 penalty and scores 29 instead of 63. It still counts
     // once, under the trust-claim rule only.
-    expect(analyze('We guarantee 99.9% uptime.').score).toBe(29)
+    expect(analyze('We guarantee 99.9% uptime.').score).toBe(22)
   })
 
   it('counts "Trusted by 10,000 teams" as social proof only', () => {
@@ -71,7 +71,7 @@ describe('fix2: F-20 one claim counts once', () => {
     // Stage 3, intentional change: this 5-word draft is judged
     // against a 12-word floor, not 50, so the one medium hit costs
     // a 40.91 penalty and scores 48 instead of 76.
-    expect(analyze('Trusted by 10,000 teams worldwide.').score).toBe(48)
+    expect(analyze('Trusted by 10,000 teams worldwide.').score).toBe(40)
   })
 
   it('still flags a number when no social-proof phrase matches it', () => {
@@ -356,7 +356,7 @@ describe('fix2: F-38 a paired interruption counts once', () => {
       'She said \u2014 and I quote \u2014 that it was fine. He said \u2014 and I quote \u2014 that it was done. They said \u2014 and I quote \u2014 that it was ready.',
     )
     expect(result.findings.filter((finding) => finding.ruleId === 'em-dash')).toHaveLength(3)
-    expect(result.score).toBe(54)
+    expect(result.score).toBe(46)
   })
 })
 
