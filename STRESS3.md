@@ -4,7 +4,7 @@
 - **Code under test:** `~/workspace/sloppy-p2/`, fresh clone of `https://github.com/coldabs/sloppy` at HEAD `a01fad0` plus uncommitted P2 changes (28 rules in 7 groups: voice, claims, actions, format, structure, diversity, substance).
 - **Test file:** `src/lib/p2-stress3.test.ts` (4 tests, all passing)
 - **Engine files modified:** none. `src/lib/rules.ts`, `src/lib/analyzer.ts` and every other engine file untouched; nothing pushed or uploaded.
-- **Method:** every probe runs through the real `analyze()` scorer. First pass recorded scores with no band assertions; bands were pinned only after the scores were measured, then re-run. A probe counts as a finding only when the measured score and the rules fired support it. The full suite was not run (parent runs final verification); this file alone: **4/4 tests pass**, `npx oxlint` **0 errors**, `npx tsc -b` **0 errors**.
+- **Method:** every probe runs through the real `analyze()` scorer. First pass recorded scores with no band assertions; bands were pinned only after the scores were measured, then re-run. A probe counts as a finding only when the measured score and the rules fired support it. The full suite was not run at the time; this file alone: **4/4 tests pass**, `npx oxlint` **0 errors**, `npx tsc -b` **0 errors**.
 
 ## Summary
 

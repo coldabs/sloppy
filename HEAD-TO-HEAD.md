@@ -2,9 +2,8 @@
 
 Date: 2026-11-14. Sloppy scores below were measured through the real
 `analyze()` scorer in this copy (P2, 28 rules). SlopDetector scores were measured live in the browser on 2026-11-14, 12:18-12:22 CET, each probe pasted verbatim in order. Scales run opposite ways: sloppy 100 = clean, SlopDetector 100 = sloppiest. No probe scored above 32 on SlopDetector; it labelled 25-32 'LOW SLOP' and lower scores 'Not Slop'. The exact probe texts are
-included below so the parent agent can paste each one into
-slopdetector.org and fill the column in — no probe text may be changed
-when doing that, or the comparison is not the same test.
+included below so anyone can repeat the comparison: paste each one into
+slopdetector.org verbatim — changing a probe changes the test.
 
 ## How to read it
 
@@ -13,7 +12,7 @@ when doing that, or the comparison is not the same test.
   compare, read SlopDetector as "100 minus sloppy" only roughly: a
   SlopDetector 80 on a text sloppy scores 20 is agreement; a
   SlopDetector 20 on the same text is a miss.
-- P2's pass bar (from the plan): sloppy wins or ties on fake claims,
+- The bar for this comparison: sloppy wins or ties on fake claims,
   evasions, and clean-text false positives; sloppy no longer loses on
   vocabulary or diversity probes.
 - One honest caveat, measured below: adding clean words to a draft
@@ -187,7 +186,7 @@ Our platform is efficient, scalable, and reliable. The tool is fast, secure, and
 The council voted on Tuesday to repair the bridge over the Miller River, a project that has waited three years for funding. Engineers found cracks in two of the support pillars during an inspection last spring, and the state ordered the crossing closed to trucks over ten tonnes. Local shops on the north bank say trade fell by a third while lorries took the long route around the valley. The repair will take fourteen weeks. Work starts in April, when the river is low, and the road will stay open to cars in one direction, controlled by temporary lights. A second crew will resurface the approach road at the same time. The total cost is 2.4 million euros, paid from the regional transport budget. The mayor said the council had chosen the cheapest of three tenders, from a firm based in Linz. Residents can read the full schedule at the town hall, where the plans are pinned to the notice board until the end of March.
 ```
 
-## Verdict (filled 2026-11-14)
+## Verdict
 
 Sloppy P2 wins the head-to-head. On fake claims it is decisive: fake-number sloppy 34 (Heavy slop) vs SlopDetector 5; fake-number plus a fake citation sloppy 40 vs SlopDetector 0 — the fake citation cleared SlopDetector completely. On obvious slop it is stronger: example-draft sloppy 9 vs SlopDetector 30, vocab-slop 18 vs 32, thin-substance 40 vs 29, repetitive-same-words 39 vs 23. On clean texts both agree they are clean (sloppy 100, SlopDetector 0-14), with SlopDetector slightly noisier on literary/academic/legal (8-14). SlopDetector never called any probe more than LOW SLOP.
 
