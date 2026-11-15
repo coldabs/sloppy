@@ -755,8 +755,11 @@ export const falseNegativeProbes: Probe[] = [
   {
     id: 'C28',
     group: 'false-negative',
+    // F20 (2026-11-15): the testimonial cliche now fires ("I love this
+    // product so much"), so this is mostly clean, not clean. It was
+    // pinned clean only because the cliche was missed at 100.
     text: 'I love this product so much, it is wonderful and I use it every single day.',
-    band: 'clean',
+    band: 'mostly',
     focus: 'testimonial-cliche',
   },
   {

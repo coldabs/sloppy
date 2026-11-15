@@ -298,7 +298,7 @@ describe('polish: F-56 evidence link in the next sentence', () => {
 })
 
 describe('polish: F-53 inventory counts', () => {
-  it('measures 215 distinct vocabulary terms and 129 distinct clichés', () => {
+  it('measures 215 distinct vocabulary terms and 131 distinct clichés', () => {
     const vocab = new Set([
       ...BUZZWORD_PHRASES,
       ...AI_TELL_PHRASES,
@@ -319,9 +319,10 @@ describe('polish: F-53 inventory counts', () => {
     // revolutionize, turbocharge, skyrocket, garner, surpass, boast,
     // tapestries, and the tier-3 stems align, emphasize, pioneer,
     // spearhead, champion, orchestrate, cultivate, plus the
-    // game-changers / paradigm-shifts / advancement plurals). The
-    // cliché union is unchanged at 129.
+    // game-changers / paradigm-shifts / advancement plurals). F20
+    // (2026-11-15) added two testimonial cliches ("i love this product
+    // so much", "best thing i have ever used"), so the union is 131.
     expect(vocab.size).toBe(215)
-    expect(cliche.size).toBe(129)
+    expect(cliche.size).toBe(131)
   })
 })
