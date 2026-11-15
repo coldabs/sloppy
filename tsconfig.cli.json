@@ -33,6 +33,7 @@
     "src/lib/fix5.test.ts",
     "src/lib/fix6.test.ts",
     "src/lib/fix8.test.ts",
-    "src/lib/stage6.test.ts"
+    "src/lib/stage6.test.ts",
+    "bench/bench.test.ts"
   ]
 }
