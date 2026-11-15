@@ -31,11 +31,21 @@ await build({
       // bundling ("Class extends value undefined"). It stays an
       // external import, loaded from node_modules at runtime, which
       // is why the CLI needs a plain `npm install` first. It is
-      // already a devDependency (the tests use it), so this adds no
-      // new dependency. node:fs/promises is external for the same
-      // reason in reverse: bundling it would replace it with a
-      // browser stub that cannot read files.
-      external: ['happy-dom', 'node:fs/promises'],
+      // a dependency (the CLI needs a DOM for site scans), so this
+      // adds no new dependency. node:fs/promises is external for
+      // the same reason in reverse: bundling it would replace it
+      // with a browser stub that cannot read files. The node
+      // builtins the guarded fetch uses (server/fetch.mjs) are
+      // external for the same reason: without this, Vite replaces
+      // them with browser stubs and the SSRF guard cannot run.
+      external: [
+        'happy-dom',
+        'node:fs/promises',
+        'node:dns/promises',
+        'node:http',
+        'node:https',
+        'node:net',
+      ],
     },
   },
 })
