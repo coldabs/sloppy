@@ -36,6 +36,78 @@ describe('isPrivateAddress', () => {
     }
   })
 
+  it('blocks only the RFC 5737 /24 documentation ranges, not the /16s', () => {
+    // 198.51.100.0/24 (TEST-NET-2) and 203.0.113.0/24 (TEST-NET-3).
+    for (const address of [
+      '198.51.100.0',
+      '198.51.100.1',
+      '198.51.100.255',
+      '203.0.113.0',
+      '203.0.113.1',
+      '203.0.113.255',
+    ]) {
+      expect(isPrivateAddress(address), address).toBe(true)
+    }
+    // The rest of 198.51.0.0/16 and 203.0.0.0/16 is public address space.
+    for (const address of [
+      '198.51.0.1',
+      '198.51.99.1',
+      '198.51.101.1',
+      '198.51.200.1',
+      '203.0.0.1',
+      '203.0.112.1',
+      '203.0.114.1',
+      '203.0.200.1',
+    ]) {
+      expect(isPrivateAddress(address), address).toBe(false)
+    }
+  })
+
+  it('blocks NAT64, Teredo, 6to4, and the full fe80::/10 link-local range', () => {
+    for (const address of [
+      // NAT64 64:ff9b::/96, including an encapsulated private IPv4.
+      '64:ff9b::127.0.0.1',
+      '64:ff9b::8.8.8.8',
+      // Teredo 2001::/32, in compressed and expanded spellings.
+      '2001::1',
+      '2001:0:4136:e378:8000:63bf:3fff:fdd2',
+      '2001:0000::1',
+      // 6to4 2002::/16, including an encapsulated private IPv4.
+      '2002::1',
+      '2002:808:808::1',
+      '2002:7f00:1::1',
+      // Link-local fe80::/10 spans fe80 through febf.
+      'fe80::1',
+      'fe8f::1',
+      'fe9a::1',
+      'fea0::1',
+      'feb0::1',
+      'febf::1',
+    ]) {
+      expect(isPrivateAddress(address), address).toBe(true)
+    }
+  })
+
+  it('does not block public IPv6 or short groups outside fc00::/7', () => {
+    for (const address of [
+      '2606:4700:4700::1111',
+      // 2001:4860::/32 is Google, not Teredo (second group is not zero).
+      '2001:4860:4860::8888',
+      // Short first groups that merely start with fc/fd are outside
+      // fc00::/7 (0x00fc, 0x0fca, 0x00fd, 0x0fd1, 0x0fc0).
+      'fc::1',
+      'fca::1',
+      'fd::1',
+      'fd1::1',
+      'fc0::1',
+      // Outside fe80::/10 on either side.
+      'fec0::1',
+      'fe00::1',
+    ]) {
+      expect(isPrivateAddress(address), address).toBe(false)
+    }
+  })
+
   it('blocks loopback, unique-local, link-local, and mapped IPv6 addresses', () => {
     for (const address of ['::1', '::', 'fc00::1', 'fd12:3456::1', 'fe80::1', '::ffff:127.0.0.1']) {
       expect(isPrivateAddress(address), address).toBe(true)
