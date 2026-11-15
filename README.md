@@ -8,7 +8,7 @@ There is no language model. The scan is a fixed list of patterns, CSS signals,
 and visible weights with a visible formula, so the same input always gets the
 same score, and every score can be explained.
 
-Try it live: https://sloppyabs.netlify.app — no install, no account, nothing uploaded.
+Try it live: https://sloppyabs.pages.dev — no install, no account, nothing uploaded.
 
 ![sloppy in the browser](docs/screenshot.png)
 
