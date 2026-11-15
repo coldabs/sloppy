@@ -397,7 +397,19 @@ export const blankCodeSpans = (text: string): string => {
   )
 }
 
-export const analyze = (text: string): Analysis => {
+// Options for a copy scan. `enabledRuleIds` runs only the named
+// rules — the config file's `rules` key (F60) is the one caller: a
+// project that only wants the number and hype rules, for example,
+// lists those two ids and the rest of the registry stays silent.
+// When it is absent, every rule runs, exactly as before.
+export interface AnalyzeOptions {
+  enabledRuleIds?: readonly string[]
+}
+
+export const analyze = (
+  text: string,
+  opts: AnalyzeOptions = {},
+): Analysis => {
   // Rules run on the normalised text, so lookalike letters, invisible
   // characters and swapped dashes cannot hide a phrase. Every finding
   // is mapped back to its span in the original text, so the highlighted
@@ -460,13 +472,19 @@ export const analyze = (text: string): Analysis => {
   // contained match is dropped only when the match containing it is
   // at least as severe; ties keep the rule that comes first in the
   // list, so the result is deterministic.
+  const enabled = opts.enabledRuleIds
+    ? new Set(opts.enabledRuleIds)
+    : null
+  const activeRules = enabled
+    ? rules.filter((rule) => enabled.has(rule.id))
+    : rules
   const scannedMatches: Array<{
     rule: RuleDefinition
     start: number
     end: number
     order: number
   }> = []
-  rules.forEach((rule, order) => {
+  activeRules.forEach((rule, order) => {
     for (const match of rule.scan(scanned)) {
       scannedMatches.push({ rule, start: match.start, end: match.end, order })
     }
