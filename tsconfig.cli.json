@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.cli.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": ["vite/client", "node"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "src/lib/cli.ts",
+    "src/lib/cliEntry.ts",
+    "src/lib/critical-fixes.test.ts",
+    "src/lib/fix12.test.ts",
+    "src/lib/fix15.test.ts",
+    "src/lib/fix2.test.ts",
+    "src/lib/fix4.test.ts",
+    "src/lib/fix5.test.ts",
+    "src/lib/fix6.test.ts",
+    "src/lib/fix8.test.ts",
+    "src/lib/stage6.test.ts"
+  ]
+}

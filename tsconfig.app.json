@@ -4,7 +4,7 @@
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     "module": "esnext",
-    "types": ["vite/client", "node"],
+    "types": [],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
@@ -22,5 +22,22 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    // Node-only code: the CLI entry and the tests that drive Node
+    // APIs. They are typechecked by tsconfig.cli.json, which opts
+    // into the Node types — the app config must not leak them into
+    // browser code (F16).
+    "src/lib/cli.ts",
+    "src/lib/cliEntry.ts",
+    "src/lib/critical-fixes.test.ts",
+    "src/lib/fix12.test.ts",
+    "src/lib/fix15.test.ts",
+    "src/lib/fix2.test.ts",
+    "src/lib/fix4.test.ts",
+    "src/lib/fix5.test.ts",
+    "src/lib/fix6.test.ts",
+    "src/lib/fix8.test.ts",
+    "src/lib/stage6.test.ts"
+  ]
 }
