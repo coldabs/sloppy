@@ -138,6 +138,23 @@ const MATH_WORDS = new Set([
   'computes',
 ])
 
+// Scarcity and urgency sales wording — "while stocks last", "act
+// now", "don't miss out". The website scanner already flags the same
+// family of phrases on landing pages (siteRules.ts); the copy engine
+// did not, so a one-sentence sales blast scored clean. Low severity:
+// the phrases are salesy, not deceptive on their own.
+const URGENCY_PHRASES = [
+  'while stocks last',
+  'while supplies last',
+  'grab yours',
+  'act now',
+  "don't miss out",
+  'limited time offer',
+  'last chance',
+  'only today',
+  'offer ends',
+]
+
 const vagueSolution = (text: string): RawMatch[] => {
   const base = matchPhrases([
     'solutions',
@@ -173,6 +190,15 @@ export const actionsRules: RuleDefinition[] = [
     note: 'The label tells you nothing about what happens next. "Explore the codebase" and "To get started, run npm install" are instructions, not sales buttons, and are left alone — as are "Learn more" and "Click here" when they point at the documentation, and a call to action that sits on a heading line.',
     fix: "Name the action: 'Paste your draft', 'See the rules'.",
     scan: genericCta,
+  },
+  {
+    id: 'urgency-scarcity',
+    label: 'Urgency and scarcity wording',
+    group: 'actions',
+    severity: 'low',
+    note: 'Deadline and scarcity phrases that pressure the reader instead of making a case: while stocks last, act now, only today. The website scanner flags the same family on landing pages.',
+    fix: 'Drop the deadline, or say when it actually ends.',
+    scan: matchPhrases(URGENCY_PHRASES),
   },
   {
     id: 'vague-solution',

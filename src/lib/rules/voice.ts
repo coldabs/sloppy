@@ -613,6 +613,21 @@ const aiAdjectives = (text: string): RawMatch[] => {
   return distinct.size >= AI_ADJECTIVE_MIN_DISTINCT ? matches : []
 }
 
+// Repeated marks and celebration emoji stand in for emphasis, and so
+// does the same emoji three or more times in a row. A draft of nothing
+// but emoji has no prose to hype, so the repeated-emoji half needs
+// words around it — an emoji-only draft stays clean.
+const hypePunctuation = (text: string): RawMatch[] => {
+  const base = matchPattern(
+    /[!?]{2,}|[\u{1F525}\u{1F680}\u{2728}\u{1F389}\u{1F4AF}\u{1F60D}\u{1F973}\u{1F64C}\u{1F44F}\u{1F4AA}\u{1F38A}\u{2B50}\u{1F31F}]/gu,
+  )(text)
+  if (countWordsIn(text) === 0) return base
+  return [
+    ...base,
+    ...matchPattern(/(\p{Extended_Pictographic})\1{2,}/gu)(text),
+  ].sort((a, b) => a.start - b.start)
+}
+
 export const voiceRules: RuleDefinition[] = [
   {
     id: 'em-dash',
@@ -691,10 +706,8 @@ export const voiceRules: RuleDefinition[] = [
     label: 'Hype punctuation',
     group: 'voice',
     severity: 'low',
-    note: 'Repeated marks and celebration emoji stand in for emphasis.',
+    note: 'Repeated marks, celebration emoji, and the same emoji three or more times in a row stand in for emphasis. A single ordinary emoji on its own is left alone, and so is a draft of nothing but emoji.',
     fix: 'Keep one period and let the sentence carry the weight.',
-    scan: matchPattern(
-      /[!?]{2,}|[\u{1F525}\u{1F680}\u{2728}\u{1F389}\u{1F4AF}\u{1F60D}\u{1F973}\u{1F64C}\u{1F44F}\u{1F4AA}\u{1F38A}\u{2B50}\u{1F31F}]/gu,
-    ),
+    scan: hypePunctuation,
   },
 ]
