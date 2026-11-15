@@ -1,0 +1,36 @@
+name: False positive
+description: The scanner flagged ordinary writing that should score clean
+title: "False positive: "
+labels: ["false-positive"]
+body:
+  - type: textarea
+    id: draft
+    attributes:
+      label: The draft (or the flagged part of it)
+      description: Paste the text that was flagged. Short excerpts are fine — the flagged sentences are what matter.
+      placeholder: Paste the flagged text here.
+    validations:
+      required: true
+  - type: textarea
+    id: fired
+    attributes:
+      label: What fired
+      description: Which rules fired, and what score the draft got.
+      placeholder: "e.g. score 54, buzzwords fired on 'leverage' in a technical paragraph"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+      description: Why this text should score clean — what it is, and what the flagged words mean in context.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The sloppy version (CLI `--version`, or the commit on main if you ran it from source).
+      placeholder: "e.g. 0.2.0, or main @ cbf88ae"
+    validations:
+      required: false
