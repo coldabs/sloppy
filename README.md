@@ -56,7 +56,9 @@ rules over the draft and marks each hit in place.
 
 The full list, with the wording for each rule and its suggested fix, is in
 [docs/METHOD.md](docs/METHOD.md), and the page renders that same list from the
-same data, so the documentation and the scanner cannot drift apart.
+same data, so the list itself cannot drift from the scanner — the prose
+around it still can, and the counts it states are guarded by the checks
+in `scripts/check-docs.mjs`.
 
 A draft of up to 20,000 characters can be scanned. A deliberately sloppy
 sample is built in, under "Load a sloppy example", for anyone who wants to
