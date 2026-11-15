@@ -64,9 +64,12 @@ Before → after (P1/fix2 baseline → P2), same probe texts:
 
 The example draft moved 6 → 9 because P2 no longer flags its single
 trailing dash ("- Jamie, CEO") at em-dash density; it is still
-Industrial slop. The fake-number variant moved 34 → 40 only through
-dilution (9 extra clean words); the trust-claim and unsourced-number
-flags are still on, so the fake citation did not clear anything.
+Industrial slop. The fake-number variant moved 31 → 34 under current
+scoring (the P2 table above still shows the pre-Stage-3 34 → 40); the
+rise is the adaptive floor alone, and the fake citation clears
+nothing — the trust-claim and unsourced-number flags are still on.
+The old 31 → 40 pair included one hit cleared by the pricing link
+(fixed 2026-11-15, F17).
 
 ## Probe texts (paste verbatim)
 
@@ -192,9 +195,12 @@ The table above is the P2 record and is left as written. Re-running all
 co-occurrence multiplier): 18 probes score exactly as before. Three
 moved, all lower (harsher): fake-number 34 → 31, fake-authority 54 → 47,
 repetitive-same-words-150w 39 → 38. No clean probe moved. The
-fake-citation pair now reads 31 → 40; the rise is the adaptive floor
-growing from 44 to 50 across the pair plus one unsourced-number hit
-cleared by the existing citation logic — the caveat above that the rise
-came "solely because the extra words inflated effectiveWords" was wrong
-for this pair: the old flat floor was 50 for both versions, so the old
-34 → 40 rise was the cleared hit alone.
+fake-citation pair now reads 31 → 34; the rise is the adaptive floor
+growing from 44 to 50 across the pair, and the fake citation clears
+nothing — the pricing-link bypass was fixed 2026-11-15 (F17), so the
+fake-citation probe moved 40 → 34. The old 31 → 40 pair was the floor
+rise plus one unsourced-number hit cleared by the pricing link; the
+caveat above that the rise came "solely because the extra words
+inflated effectiveWords" was wrong for this pair: the old flat floor
+was 50 for both versions, so the old 34 → 40 rise was the cleared
+hit alone.
