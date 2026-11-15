@@ -44,8 +44,10 @@ than leaving it for the reviewer.
 
 - A language model, a network request, analytics, or an account. The
   draft stays in the tab. That is a design rule, not a missing feature.
-- A UI framework, an icon pack, or a new visual system. The Swiss poster
-  look is the identity of the tool.
+- A UI framework, an additional icon pack, or a new visual system. The one
+  icon set the project already ships (`@tabler/icons-react`, a small set of
+  named glyphs) is the exception, not an invitation to add another. The Swiss
+  poster look is the identity of the tool.
 - Claims the tool cannot support. A high score is not proof of quality,
   and the documentation must keep saying so.
 
