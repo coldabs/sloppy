@@ -390,7 +390,6 @@ ones are handled: "Explore the codebase", a compliance claim that links its
 audit, and known acronyms such as NASA are left alone. A high score is not
 proof of quality, and a low score is not proof of slop. Known gaps, including
 ways the fixed list can be worked around, are written down rather than hidden.
-See the audit notes in the repository history if they are kept with the project.
 
 Website mode reads a static fetch. It cannot see JavaScript-rendered content,
 computed styles, hover states, animation, responsive layout, or any page behind
