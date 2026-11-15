@@ -354,7 +354,13 @@ of the same sizes.
   stays silent on a clean one.
 - Only English is checked in P2. The em dash and number rules still
   fire on any text, because dashes and digits are not English, but
-  the phrases are. A dash that opens a line of dialogue is not
+  the phrases are. The sentence-rhythm rules (same-length
+  sentences, burstiness) do not judge a draft that is likely not
+  English — their thresholds are calibrated on English, so a German
+  paragraph with a steady rhythm is not flagged for it (fixed
+  2026-11-15, F33; the check counts function words in German,
+  French, Spanish, Italian, Portuguese, and Dutch against English
+  ones). A dash that opens a line of dialogue is not
   counted as a pause in any language. A non-English corpus is not part of this release.
 
 ## Scoring constants
@@ -370,17 +376,17 @@ dev/test precision and recall and the grey-zone agreement
 discriminating metric is the grey zone, not the binary
 precision/recall: binary precision/recall stay at 100% over wide
 ranges of every constant, so they cannot tell a good constant from
-a bad one, while the eight grey entries sit near the 70–89 band
+a bad one, while the seven grey entries sit near the 70–89 band
 edges and move when a constant changes.
 
 Three constants are pinned by the corpus — each has exactly one
-swept value that keeps all eight grey entries in band, bracketed
+swept value that keeps all seven grey entries in band, bracketed
 on both sides by values that push entries out: the low weight 4
-(at 2, B10/C11/C23 escape upward to 92–94; at 5, C06/C07/C20/C27
+(at 2, C11/C23 escape upward to 92–94; at 5, C06/C07/C20/C27
 fall to 65–69), the decay 55 (at 45, C06/C07/C27 fall to 65–69;
 at 65, C11 escapes to 91), and the density saturation 10 (at 5,
 C11 escapes to 90; at 20, C06/C07/C20/C27 fall to 63–69). The
-window blend is constrained to peak-heavy (0.75–1.0 keeps 8/8;
+window blend is constrained to peak-heavy (0.75–1.0 keeps 7/7;
 0.5–0.65 loses one), and 0.85 sits in the middle of that flat
 region. The rest are design choices the corpus cannot
 distinguish: high (10–25) and medium (6–15) all keep the
@@ -500,7 +506,8 @@ of its band fails the bench.
   citation.
 - Only English text is checked. The em dash and number rules still fire
   on any text, because dashes and digits are not English, but the
-  phrases are. Layout, images, motion, and code are out of reach. A
+  phrases are. The sentence-rhythm rules do not judge a draft that
+  is likely not English (F33). Layout, images, motion, and code are out of reach. A
   high score is not proof of quality, and a low score is not proof of
   slop.
 
