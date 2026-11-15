@@ -193,8 +193,10 @@ Numbers, credentials, and praise that arrive without proof.
 
 The unsourced number rule leaves a number alone only with a real
 citation. A link counts only when it looks like evidence: its path
-carries an evidence word such as report, survey, study, or audit, or
-evidence wording sits next to it. A link to a pricing page, a
+carries an evidence word such as report, survey, study, or audit.
+Wording next to a bare link does not count — a pricing link with
+the word "report" beside it used to clear a hit, and no longer does
+(fixed 2026-11-15, F17). A link to a pricing page, a
 homepage, or a bare domain does not clear a number. The link has to
 start within 40 characters of the number, or sit in the same sentence
 as the number or the next one — a real citation can sit further than
@@ -423,10 +425,12 @@ of the same sizes.
   appended (penalty 133.53 to 61.27), where the old global-only
   scoring let it rise to 79. A fake-citation variant of a flagged text
   can still score higher than the original — the literal HEAD-TO-HEAD
-  pair moves 31 to 40 — but not through dilution: the adaptive floor
-  grows from 44 to 50 across that pair, and the pre-existing citation
-  logic clears one unsourced-number hit (the rule still fires, with
-  two hits instead of three). At or above the 23-word floor cap, with
+  pair moves 31 to 34 — but not through dilution and not through a
+  cleared hit: the adaptive floor grows from 44 to 50 across that
+  pair, and the fake citation clears nothing (the rule still fires,
+  with all three unsourced-number hits). Before the F17 fix the pair
+  moved 31 to 40, because the pricing link cleared one hit whenever
+  the word "report" sat beside it. At or above the 23-word floor cap, with
   the same hits, added words alone change nothing.
 - False positives are normal. The common ones are handled — "Explore
   the codebase", a compliance claim that links its audit, known
