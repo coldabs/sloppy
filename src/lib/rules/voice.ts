@@ -146,8 +146,13 @@ const CROSS_SENTENCE_TWIST =
   /^\s*(?:it|this|that|they|he|she)\s+(?:is|are|was|were)\s+(?:a|an|the|more)\b/i
 
 const notJust = (text: string): RawMatch[] => {
+  // The "it's / it is" twist must reframe, not report: it has to be
+  // followed by an article or "more" — "it is a whole new way of
+  // working" counts, "it is blocking the release" does not (F26,
+  // the other half of the F20 design; the cross-sentence twist
+  // already restricts the same way).
   const pattern =
-    /\bnot\s+(?:just|only|merely)\b[\s\S]*?\b(?:but|yet|it'?s|it\s+is)\b/gi
+    /\bnot\s+(?:just|only|merely)\b[\s\S]*?\b(?:but|yet|(?:it'?s|it\s+is)\s+(?:a|an|the|more)\b)/gi
   const matches: RawMatch[] = []
   const spans = sentenceSpans(text)
   for (let i = 0; i < spans.length; i += 1) {

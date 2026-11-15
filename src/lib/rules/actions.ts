@@ -112,6 +112,23 @@ const genericCta = (text: string): RawMatch[] => {
 // "Find all solutions to the equation." The check looks at the
 // sentence itself and the one before it, so "There are two solutions."
 // in the sentence after the equation is covered too.
+// Words that make "solutions" a literal domain term rather than
+// a product noun: "the aqueous solutions were heated", "a storage
+// solution for the backups" (F26). Same sentence-or-previous check
+// as MATH_WORDS. "storage" is the risky one — "we offer storage
+// solutions" is a product pitch — but the audit's literal use is
+// the same shape, so the collocation wins and the pitch goes
+// unflagged; the rest of a pitch still has plenty of signals.
+const SOLUTION_DOMAIN_WORDS = new Set([
+  'aqueous',
+  'saline',
+  'buffer',
+  'chemical',
+  'solvent',
+  'molar',
+  'storage',
+])
+
 const MATH_WORDS = new Set([
   'equation',
   'solve',
@@ -175,7 +192,12 @@ const vagueSolution = (text: string): RawMatch[] => {
     for (const index of [sentenceIndex, sentenceIndex - 1]) {
       if (index < 0 || index >= spans.length) continue
       const body = text.slice(spans[index].start, spans[index].end)
-      if (wordsIn(body).some((word) => MATH_WORDS.has(word))) return false
+      if (
+        wordsIn(body).some(
+          (word) => MATH_WORDS.has(word) || SOLUTION_DOMAIN_WORDS.has(word),
+        )
+      )
+        return false
     }
     return true
   })
