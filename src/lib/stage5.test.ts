@@ -133,13 +133,25 @@ describe('stage5: oklch / hsl / var() colours fire blue-purple-palette', () => {
 
   it('keeps the existing hex and keyword detection working', () => {
     const html = wrap(
+      `<p class="a b c">Colour probes.</p>`,
+      `<style>
+        .a { color: #8b5cf6; }
+        .b { color: purple; }
+        .c { color: #6366f1; }
+      </style>`,
+    )
+    expect(occurrencesOf(html, 'blue-purple-palette')).toBe(3)
+  })
+
+  it('does not fire blue-purple-palette for two accents only (F40)', () => {
+    const html = wrap(
       `<p class="a b">Colour probes.</p>`,
       `<style>
         .a { color: #8b5cf6; }
         .b { color: purple; }
       </style>`,
     )
-    expect(occurrencesOf(html, 'blue-purple-palette')).toBe(2)
+    expect(groupOf(html, 'blue-purple-palette')).toBeUndefined()
   })
 })
 
@@ -222,16 +234,17 @@ describe('stage5: unused CSS declarations do not fire', () => {
       .glass-c { backdrop-filter: blur(8px); }
       .pal-a { color: #8b5cf6; }
       .pal-b { color: purple; }
+      .pal-c { color: #6366f1; }
     `
     const unused = wrap(`<p>Plain text.</p>`, `<style>${sheet}</style>`)
     expect(groupOf(unused, 'glass-surfaces')).toBeUndefined()
     expect(groupOf(unused, 'blue-purple-palette')).toBeUndefined()
     const used = wrap(
-      `<p class="glass-a glass-b glass-c pal-a pal-b">Plain text.</p>`,
+      `<p class="glass-a glass-b glass-c pal-a pal-b pal-c">Plain text.</p>`,
       `<style>${sheet}</style>`,
     )
     expect(occurrencesOf(used, 'glass-surfaces')).toBe(3)
-    expect(occurrencesOf(used, 'blue-purple-palette')).toBe(2)
+    expect(occurrencesOf(used, 'blue-purple-palette')).toBe(3)
   })
 
   it('still fires for a genuinely used stylesheet passed in as a fetched file', () => {

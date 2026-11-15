@@ -1160,15 +1160,46 @@ const baseUtilityToken = (token: string) => token.replace(/^(?:[a-z][a-z0-9-]*:)
 const countDomUtility = (
   context: SiteContext,
   isUtilityToken: (token: string) => boolean,
+  skipElement?: (element: Element) => boolean,
 ): number => {
   const parsed = getParsedCss(context)
   const domIndex = parsed.domIndex ?? (parsed.domIndex = domIndexOf(context.doc))
   let count = 0
   for (const element of domIndex.classedElements) {
+    if (skipElement?.(element)) continue
     const tokens = (element.getAttribute('class') ?? '').split(/\s+/)
     if (tokens.some((token) => token && isUtilityToken(baseUtilityToken(token)))) count++
   }
   return count
+}
+
+// A pill radius on a small control is idiomatic, not a template
+// signal (F40): avatars, badges, toggles, and pill buttons are
+// rounded by design. The pill-radius rule counts surfaces — cards,
+// sections, containers — so these elements are skipped when their
+// rounded-full use is counted in the DOM. (A stylesheet rule such
+// as `.card { border-radius: 999px }` still counts through the CSS
+// path; only the DOM utility count is scoped.)
+const isSmallPillElement = (element: Element): boolean => {
+  const tag = element.tagName.toLowerCase()
+  if (
+    tag === 'img' ||
+    tag === 'button' ||
+    tag === 'input' ||
+    tag === 'select' ||
+    tag === 'textarea' ||
+    tag === 'a'
+  ) {
+    return true
+  }
+  const tokens = (element.getAttribute('class') ?? '')
+    .split(/\s+/)
+    .map((token) => baseUtilityToken(token))
+  return tokens.some(
+    (token) =>
+      /^(badge|chip|pill|avatar|tag)$/i.test(token) ||
+      /-(badge|chip|avatar|pill)$/i.test(token),
+  )
 }
 
 // Used-CSS signals + DOM utility uses, minus the signals that came
@@ -1524,7 +1555,7 @@ const pillRadius = (context: SiteContext): SiteHit[] => {
     (value) => PILL_VALUE.test(value),
     isPillUtilityToken,
   )
-  const dom = countDomUtility(context, isPillUtilityToken)
+  const dom = countDomUtility(context, isPillUtilityToken, isSmallPillElement)
   const { total } = combineCssAndDom(css, dom, definitionSignals)
   if (total < 3) return []
   return [
@@ -1574,7 +1605,10 @@ const bluePurplePalette = (context: SiteContext): SiteHit[] => {
   const { css, definitionSignals } = countBluePurpleCss(context)
   const dom = countDomUtility(context, isPurpleUtilityToken)
   const { total } = combineCssAndDom(css, dom, definitionSignals)
-  if (total < 2) return []
+  // Three, not two (F40): two indigo accents is ordinary branding —
+  // a heading and a button in the brand colour — while three or more
+  // is a palette. The audit's two-declaration probe no longer fires.
+  if (total < 3) return []
   return [
     {
       excerpt: `${total} violet, indigo, or blue accents appear in the styles or markup.`,

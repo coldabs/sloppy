@@ -67,14 +67,15 @@ describe('F37: selector matching', () => {
 
   it('keeps :root custom properties resolving', () => {
     const html = wrap(
-      `<p class="a b">Text.</p>`,
+      `<p class="a b c">Text.</p>`,
       `<style>
         :root { --brand: #8b5cf6; }
         .a { color: var(--brand); }
         .b { color: purple; }
+        .c { color: #6366f1; }
       </style>`,
     )
-    expect(occurrencesOf(html, 'blue-purple-palette')).toBe(2)
+    expect(occurrencesOf(html, 'blue-purple-palette')).toBe(3)
   })
 
   it('does not count a rule whose class token is absent from the DOM', () => {

@@ -118,13 +118,14 @@ describe('analyzeSite', () => {
   })
 
   it('includes fetched stylesheet text in the style checks', () => {
-    const html = `<html><head><title>Doc</title><meta name="description" content="A page." /></head><body><h1>Doc</h1><p class="a b c d e">Doc</p></body></html>`
+    const html = `<html><head><title>Doc</title><meta name="description" content="A page." /></head><body><h1>Doc</h1><p class="a b c d e f">Doc</p></body></html>`
     const css = `
       .a { backdrop-filter: blur(6px); }
       .b { backdrop-filter: blur(7px); }
       .c { backdrop-filter: blur(8px); }
       .d { color: #8b5cf6; }
       .e { color: purple; }
+      .f { color: #6366f1; }
     `
     expect(ruleIds(html, [css])).toEqual(
       expect.arrayContaining(['glass-surfaces', 'blue-purple-palette']),

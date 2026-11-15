@@ -127,8 +127,11 @@ describe('F36: @media desktop evaluation', () => {
         .c { color: purple; }
       </style>`,
     )
-    // .a resolves to nothing (--brand is mobile-only); .b and .c count.
-    expect(occurrencesOf(html, 'blue-purple-palette')).toBe(2)
+    // .a resolves to nothing (--brand is mobile-only); .b and .c
+    // count, which is two signals — below the palette threshold of
+    // three, so nothing fires. (If --brand had resolved, .a would
+    // make three and the rule would fire.)
+    expect(groupOf(html, 'blue-purple-palette')).toBeUndefined()
   })
 
   it('resolves custom properties defined inside a matching desktop query', () => {

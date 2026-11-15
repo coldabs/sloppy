@@ -41,13 +41,14 @@ describe('F35: CSS parser corruption probes', () => {
     // The palette colour is inside the data URI, after its `;` — the
     // `;`-split drops the second half of the declaration, losing it.
     const html = wrap(
-      `<p class="a b">Text.</p>`,
+      `<p class="a b c">Text.</p>`,
       `<style>
         .a { background-image: url("data:image/svg+xml;utf8,<svg fill='#8b5cf6'></svg>"); }
         .b { color: purple; }
+        .c { color: #6366f1; }
       </style>`,
     )
-    expect(occurrencesOf(html, 'blue-purple-palette')).toBe(2)
+    expect(occurrencesOf(html, 'blue-purple-palette')).toBe(3)
   })
 
   it('counts pill-radius from nested & rules', () => {
@@ -97,6 +98,7 @@ describe('F35: CSS parser corruption probes', () => {
        <div class="card">Card</div>
        <p class="bg-indigo-600">A</p>
        <p class="bg-indigo-600">B</p>
+       <p class="bg-indigo-600">C</p>
        <span class="quote">Quoted</span>`,
       `<style>
         @layer utilities {
@@ -115,8 +117,8 @@ describe('F35: CSS parser corruption probes', () => {
     // (the rounded-full divs — the .card div is a CSS use, not a
     // utility use) − 1 definition = 4.
     expect(occurrencesOf(html, 'pill-radius')).toBe(4)
-    // Palette: .bg-indigo-600 definition (1) + 2 DOM uses − 1 = 2.
-    expect(occurrencesOf(html, 'blue-purple-palette')).toBe(2)
+    // Palette: .bg-indigo-600 definition (1) + 3 DOM uses − 1 = 3.
+    expect(occurrencesOf(html, 'blue-purple-palette')).toBe(3)
     // The nested &:hover shadow is oversized (50px blur) but only one
     // surface uses it — below the oversized-shadows threshold of 3.
     expect(groupOf(html, 'oversized-shadows')).toBeUndefined()
