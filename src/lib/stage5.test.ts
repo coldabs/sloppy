@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 // Stage 5 — DOM-correlated CSS, modern colour spaces, dead-link
 // counting, whole-word three-steps matching, and count-first caps
-// (AUDIT.md §7 stage 5, §8 Patch D, as corrected by
-// AUDIT_VERIFICATION.md §4). Numbers below were measured from the
+// (docs/dev-notes/AUDIT.md §7 stage 5, §8 Patch D, as corrected by
+// docs/dev-notes/AUDIT_VERIFICATION.md §4). Numbers below were measured from the
 // new code, through analyzeSite() on real probe pages.
 import { describe, expect, it } from 'vitest'
 import { analyzeSite } from './siteAnalyzer'

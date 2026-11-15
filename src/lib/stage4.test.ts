@@ -1,6 +1,6 @@
 // Stage 4 — bounded wildcard gaps, morphological suffixes, MATTR,
 // unsourced-number hype-context corroboration, the widened
-// burstiness gate, and the per-group rules split (AUDIT.md §7
+// burstiness gate, and the per-group rules split (docs/dev-notes/AUDIT.md §7
 // stage 4). Numbers below were measured from the new code.
 import { describe, expect, it } from 'vitest'
 import { analyze } from './analyzer'

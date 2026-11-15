@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Stage 6 — CLI (JSON + SARIF, exit codes), Web Worker offloading,
-// and the SiteResultPanel "Plus N more" count (AUDIT.md §7 stage 6).
+// and the SiteResultPanel "Plus N more" count (docs/dev-notes/AUDIT.md §7 stage 6).
 // A real browser Worker cannot run in vitest (node has no Worker
 // global), so the client tests cover the message handler, the
 // plumbing through a fake worker, and the main-thread fallback; the

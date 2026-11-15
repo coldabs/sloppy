@@ -1,5 +1,5 @@
 // Stage 3 — sliding-window peak scoring, adaptive floor, and the
-// sentence-level co-occurrence multiplier (AUDIT.md §7 stage 3).
+// sentence-level co-occurrence multiplier (docs/dev-notes/AUDIT.md §7 stage 3).
 // Scores changed by design here: short slop scores lower than under
 // the flat 50-word floor, and a sloppy passage padded with clean
 // filler scores far lower than under global-only density. Every
@@ -184,7 +184,7 @@ describe('stage 3: sliding-window peak scoring', () => {
   })
 
   it('added words change the score only by density, never by clearing a hit', () => {
-    // The fake-citation shape from HEAD-TO-HEAD.md, at 28 words. The
+    // The fake-citation shape from docs/dev-notes/HEAD-TO-HEAD.md, at 28 words. The
     // citation sits two sentences away from every number, so no hit
     // is cleared by it: same 4 findings in both. F21 (2026-11-15):
     // the floor is now the draft's own length (28 -> 38 words), so

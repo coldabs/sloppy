@@ -1,6 +1,6 @@
 // Polish regression tests — one test per stress-test-3 finding fixed
 // in the polish round (F-39–F-56). Each test pins the behaviour that
-// changed, with the before score from STRESS3.md in the comment, so a
+// changed, with the before score from docs/dev-notes/STRESS3.md in the comment, so a
 // future change that reopens a finding fails here first.
 import { describe, expect, it } from 'vitest'
 import { analyze } from './analyzer'

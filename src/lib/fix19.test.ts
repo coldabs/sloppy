@@ -14,7 +14,8 @@ import { analyze } from './analyzer'
 // never fires — ai-tells needs four distinct tells clustered, plain
 // or Cyrillic), C42 (a real evidence link legitimately clears).
 // C28 and C34 belong to F20 (not-just across sentences, testimonial
-// cliche). STRESS3.md's C25/C27 rows are now stale pending F62.
+// cliche). docs/dev-notes/STRESS3.md's C25/C27 rows are the P2 record (100);
+// the current engine scores them 60 and 71 (measured 2026-11-15, F62).
 describe('F19: boundary slop coverage', () => {
   const ruleIds = (text: string) =>
     analyze(text).findings.map((f) => f.ruleId)
