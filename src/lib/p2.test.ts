@@ -533,8 +533,8 @@ describe('P2: clean corpus and no regressions', () => {
     expect(analyze(exampleDraft).score).toBeLessThan(15)
   })
 
-  it('has twenty-eight rules across seven groups', () => {
-    expect(rules.length).toBe(28)
+  it('has twenty-nine rules across seven groups', () => {
+    expect(rules.length).toBe(29)
     const groups = new Set(rules.map((rule) => rule.group))
     expect(groups.size).toBe(7)
   })

@@ -230,8 +230,8 @@ describe('P1: structural signals (F-13)', () => {
 })
 
 describe('P1: rule list', () => {
-  it('has twenty-eight rules, including the structural, diversity, and substance ones', () => {
-    expect(rules.length).toBe(28)
+  it('has twenty-nine rules, including the structural, diversity, and substance ones', () => {
+    expect(rules.length).toBe(29)
     const ids = rules.map((rule) => rule.id)
     expect(ids).toContain('same-length-sentences')
     expect(ids).toContain('repeated-openings')

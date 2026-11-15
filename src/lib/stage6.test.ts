@@ -97,7 +97,7 @@ describe('stage6: SARIF output', () => {
     expect(run.tool.driver.version).toBe('0.2.0')
     expect(run.tool.driver.informationUri).toBe('https://github.com/coldabs/sloppy')
     // One rule per copy rule, each with a level.
-    expect(run.tool.driver.rules).toHaveLength(28)
+    expect(run.tool.driver.rules).toHaveLength(29)
     for (const rule of run.tool.driver.rules) {
       expect(rule.id).toBeTruthy()
       expect(rule.shortDescription.text).toBeTruthy()
@@ -150,8 +150,8 @@ describe('stage6: SARIF output', () => {
     const site = analyzeSite({ url: 'https://example.com/', html })
     const sarif = siteToSarif(site, '0.2.0')
     const run = sarif.runs[0]
-    // 28 copy rules + 21 site rules.
-    expect(run.tool.driver.rules).toHaveLength(49)
+    // 29 copy rules + 21 site rules.
+    expect(run.tool.driver.rules).toHaveLength(50)
     expect(run.properties.score).toBe(site.score)
     const siteResults = run.results.filter((result) =>
       result.ruleId.startsWith('site/'),
@@ -567,7 +567,7 @@ describe.skipIf(!bundleExists)('stage6: CLI binary end to end', () => {
     expect(sarif.code).toBe(1)
     const log = JSON.parse(sarif.stdout)
     expect(log.version).toBe('2.1.0')
-    expect(log.runs[0].tool.driver.rules).toHaveLength(28)
+    expect(log.runs[0].tool.driver.rules).toHaveLength(29)
 
     const missing = await spawnCli([join(dir, 'nope.txt')])
     expect(missing.code).toBe(2)

@@ -1,4 +1,4 @@
-// Stress test 3 — P2 copy (28 rules, 7 groups).
+// Stress test 3 — P2 copy (29 rules, 7 groups).
 // Every probe runs through the real analyze() scorer. First pass: record
 // only (band 'any'); bands are pinned after the measured scores are in.
 // Never edit engine code to make a probe pass — fix the probe instead.
@@ -729,7 +729,10 @@ const falseNegativeProbes: Probe[] = [
     id: 'C25',
     group: 'false-negative',
     text: 'AMAZING deal, only today, while stocks last, so hurry and grab yours now.',
-    band: 'clean',
+    // Re-pinned 2026-11-15 (F19): the new urgency-scarcity rule fires
+    // three times here (only today, while stocks last, grab yours),
+    // so the one-sentence sales blast is slop, not clean.
+    band: 'slop',
     focus: 'shouting-caps',
   },
   {
@@ -743,7 +746,10 @@ const falseNegativeProbes: Probe[] = [
     id: 'C27',
     group: 'false-negative',
     text: 'This is amazing \u{1F600}\u{1F600}\u{1F600} and everyone loves it so much today.',
-    band: 'clean',
+    // Re-pinned 2026-11-15 (F19): hype-punctuation now fires on the
+    // same emoji three times in a row, so this is mostly clean, not
+    // clean. A single ordinary emoji on its own still scores clean.
+    band: 'mostly',
     focus: 'hype-punctuation',
   },
   {

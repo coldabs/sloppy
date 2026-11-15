@@ -327,14 +327,14 @@ describe('stage 4: widened burstiness gate', () => {
 })
 
 describe('stage 4: rules split into per-group modules', () => {
-  it('keeps twenty-eight rules in the original order from the barrel', () => {
-    expect(rules).toHaveLength(28)
+  it('keeps twenty-nine rules in the original order from the barrel', () => {
+    expect(rules).toHaveLength(29)
     expect(rules.map((rule) => rule.id)).toEqual([
       'em-dash', 'buzzwords', 'ai-tells', 'ai-adjectives', 'style-words',
       'overused-opener', 'template-closer', 'not-just', 'hype-punctuation',
       'unsourced-number', 'trust-claim', 'social-proof',
       'testimonial-cliche', 'vague-superlative', 'fake-authority',
-      'generic-cta', 'vague-solution', 'shouting-caps',
+      'generic-cta', 'urgency-scarcity', 'vague-solution', 'shouting-caps',
       'same-length-sentences', 'repeated-openings', 'adverb-density',
       'rule-of-three', 'burstiness', 'low-ttr', 'repeated-bigrams',
       'transition-stacking', 'thin-substance', 'pseudo-wisdom',
@@ -342,7 +342,7 @@ describe('stage 4: rules split into per-group modules', () => {
     expect(rules.map((rule) => rule.group)).toEqual([
       ...Array(9).fill('voice'),
       ...Array(6).fill('claims'),
-      ...Array(2).fill('actions'),
+      ...Array(3).fill('actions'),
       'format',
       ...Array(4).fill('structure'),
       ...Array(4).fill('diversity'),
@@ -362,7 +362,7 @@ describe('stage 4: rules split into per-group modules', () => {
     ])
     expect(voiceRules).toHaveLength(9)
     expect(claimsRules).toHaveLength(6)
-    expect(actionsRules).toHaveLength(2)
+    expect(actionsRules).toHaveLength(3)
     expect(formatRules).toHaveLength(1)
     expect(structureRules).toHaveLength(4)
     expect(diversityRules).toHaveLength(4)
