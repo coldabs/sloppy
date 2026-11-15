@@ -3,9 +3,10 @@
 How sloppy scores a draft, in full. Everything here comes from
 `src/lib/rules/` (one module per rule group, re-exported by the
 `src/lib/rules.ts` barrel) and `src/lib/analyzer.ts`. The page renders its rule
-ledger from the same data, so this document and the scanner cannot drift
-apart. If they ever disagree, the code is right and this document needs
-fixing.
+ledger from the same data, so the ledger itself cannot drift from the
+scanner — but the prose around it is hand-written and can go stale, as
+the citation titles once did. If they ever disagree, the code is right
+and this document needs fixing.
 
 This document covers copy mode. Website mode checks fetched markup and CSS
 with the rules in `src/lib/siteRules.ts`. It uses the same severity weights
