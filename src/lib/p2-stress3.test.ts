@@ -356,7 +356,10 @@ export const falsePositiveProbes: Probe[] = [
     id: 'B10',
     group: 'false-positive',
     text: 'Die Plattform ist revolutionär und nahtlos. Sie hilft Teams bei der täglichen Arbeit. Die Benutzeroberfläche ist intuitiv und schnell. Wir haben sie im März 2024 eingeführt. Seitdem nutzen sie über tausend Unternehmen in ganz Deutschland.',
-    band: 'mostly',
+    // F33 (2026-11-15): was 'mostly' — the German text was flagged
+    // by same-length-sentences. Non-English drafts are no longer
+    // judged on sentence rhythm, so it scores clean.
+    band: 'clean',
     focus: 'clean',
   },
   {
