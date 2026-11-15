@@ -186,6 +186,31 @@ const notJust = (text: string): RawMatch[] => {
   return matches
 }
 
+// "leverage" is a financial term, not a hype verb, when it is
+// followed by "of + number" ("leverage of three to one", "leverage
+// of 3 to 1") or preceded by uses|has|employs|with ("the fund uses
+// leverage"). The verb forms (leverages, leveraged, leveraging) are
+// not exempted: "leverage our synergies" is the hype use (F27).
+const leverageExempt = (text: string, index: number): boolean => {
+  const after = text.slice(index)
+  if (
+    /^leverage\s+of\s+(?:\d|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(
+      after,
+    )
+  ) {
+    return true
+  }
+  return /\b(?:uses|has|employs|with)\s+$/i.test(text.slice(0, index))
+}
+
+// "seamless" is a literal garment description before a garment noun
+// ("a seamless sleeve", "a seamless knit"), not the hype adjective
+// (F27).
+const seamlessExempt = (text: string, index: number): boolean =>
+  /^seamless\s+(?:sleeve|sleeves|knit|knits|tube|tubes|yoke|yokes)\b/i.test(
+    text.slice(index),
+  )
+
 export const BUZZWORD_PHRASES = [
   'ai-powered',
   'ai powered',
@@ -196,7 +221,7 @@ export const BUZZWORD_PHRASES = [
   'cutting edge',
   'groundbreaking',
   'unparalleled',
-  'seamless',
+  { phrase: 'seamless', exempt: seamlessExempt },
   'seamlessly',
   'game-changing',
   'game changing',
@@ -229,7 +254,7 @@ export const BUZZWORD_PHRASES = [
   'effortlessly',
   'innovative',
   'turnkey',
-  'leverage',
+  { phrase: 'leverage', exempt: leverageExempt },
   'leverages',
   'leveraged',
   'leveraging',

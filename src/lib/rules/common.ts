@@ -118,14 +118,44 @@ export const phraseSource = (phrase: string) =>
     // underscores, so both have to count as separators here.
     .join('[\\s\\-\\u2014\\uE000]+')
 
-export const matchPhrases = (phrases: readonly string[]) => {
-  const source = phrases.map(phraseSource).join('|')
+// A phrase-list entry is a plain string, or a phrase with a context
+// exemption: `exempt` returns true when the match is a legitimate
+// use in context, so it is not a finding (F27). It gets the scanned
+// text and the match's start index; it re-matches its own word from
+// there, so it can look at what follows, and looks back at what
+// precedes. A match that belongs to no entry (which should not
+// happen) is kept: exemptions fail safe, never silent.
+export interface PhraseEntry {
+  phrase: string
+  exempt?: (text: string, index: number) => boolean
+}
+
+export const phraseText = (entry: string | PhraseEntry): string =>
+  typeof entry === 'string' ? entry : entry.phrase
+
+export const matchPhrases = (
+  phrases: readonly (string | PhraseEntry)[],
+) => {
+  const entries: PhraseEntry[] = phrases.map((entry) =>
+    typeof entry === 'string' ? { phrase: entry } : entry,
+  )
+  const source = entries.map((entry) => phraseSource(entry.phrase)).join('|')
   const pattern = new RegExp(`\\b(?:${source})\\b`, 'gi')
+  // One anchored pattern per entry, to find which entry a combined
+  // match belongs to.
+  const entryPatterns = entries.map(
+    (entry) => new RegExp(`^(?:${phraseSource(entry.phrase)})$`, 'i'),
+  )
 
   return (text: string): RawMatch[] => {
     const matches: RawMatch[] = []
     for (const match of text.matchAll(pattern)) {
       const start = match.index ?? 0
+      const entryIndex = entryPatterns.findIndex((entryPattern) =>
+        entryPattern.test(match[0]),
+      )
+      const entry = entryIndex >= 0 ? entries[entryIndex] : undefined
+      if (entry?.exempt?.(text, start)) continue
       matches.push({ start, end: start + match[0].length })
     }
     return matches
