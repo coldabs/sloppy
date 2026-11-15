@@ -1,6 +1,11 @@
 import {
   DENSITY_FLOOR_WORDS,
+  MIN_SCORE_WORDS,
   SCORE_DECAY,
+  WINDOW_GLOBAL_WEIGHT,
+  WINDOW_PEAK_WEIGHT,
+  WINDOW_STEP_WORDS,
+  WINDOW_WORDS,
   verdictBands,
 } from '../lib/analyzer'
 import {
@@ -51,8 +56,18 @@ export function Method() {
             </li>
             <li>
               One hit in a short draft costs far more than the same hit in
-              a long one. Drafts under {DENSITY_FLOOR_WORDS} words are
-              scored as if they were {DENSITY_FLOOR_WORDS} words.
+              a long one. Short drafts are scored against an adaptive
+              floor: a draft is judged at its own length, down to a
+              minimum of {MIN_SCORE_WORDS} words and capped at{' '}
+              {DENSITY_FLOOR_WORDS}, and a draft under {MIN_SCORE_WORDS}{' '}
+              words is too short to score.
+            </li>
+            <li>
+              Density is measured twice and blended: once over the whole
+              draft and once over the worst {WINDOW_WORDS}-word sliding
+              window (step {WINDOW_STEP_WORDS} words), combined{' '}
+              {WINDOW_GLOBAL_WEIGHT} global / {WINDOW_PEAK_WEIGHT} peak,
+              so a sloppy passage cannot be washed out by clean filler.
             </li>
             <li>
               The total penalty decays on a curve: score = round(100 x e^(-penalty
