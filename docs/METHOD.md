@@ -29,12 +29,14 @@ its selector matches an element in the document (checked with the
 selector engine, with a class/id/type token fallback for selectors
 it cannot evaluate, such as `:hover`); inline `style="..."` attributes
 count because the element carrying them exists. Rules inside
-`@media print` and `@media speech` do not count, and neither do
-`@keyframes` or `@font-face`. That kills the old false positive where
-three unused framework utilities, or one rule inside a print block,
-fired pill-radius on a page that used none of them — but a real
-stylesheet whose classes elements do use still fires exactly as
-before.
+`@media` queries that do not match a desktop viewport (1280x800,
+light colour scheme, hover and a fine pointer) do not count — a
+mobile-only layout or a dark-mode override no longer inflates the
+desktop signals — and neither do `@keyframes` or `@font-face`. That
+kills the old false positive where three unused framework utilities,
+or one rule inside a print block, fired pill-radius on a page that
+used none of them — but a real stylesheet whose classes elements do
+use still fires exactly as before.
 
 Tailwind utilities are counted in the DOM as well, from element class
 attributes: `rounded-full`, `backdrop-blur-md`, `bg-indigo-600`,
@@ -44,9 +46,13 @@ forty pill uses even though the sheet defines the utility once. The
 reported total is used-CSS signals plus DOM utility uses, minus the
 signals that came from the definition of a utility the DOM already
 counted — a Tailwind sheet's one `.rounded-full` definition is not a
-forty-first pill. The thresholds did not move: pill radius and glass
-surfaces need 3, radial orbs 2, the blue-purple palette 2, the
-background grid 1, oversized shadows 3, glow clusters 2.
+forty-first pill. Pill radius counts surfaces, not small controls: a
+`rounded-full` on an avatar image, a badge, a toggle button, or a
+pill link is idiomatic and does not count toward the three. The
+thresholds: pill radius and glass surfaces need 3, radial orbs 2,
+the blue-purple palette 3 — two indigo accents is ordinary branding,
+three or more is a palette — the background grid 1, oversized
+shadows 3, glow clusters 2.
 
 Colours are read as colours, not strings. The palette rule counts
 the ten hex codes and the colour words as before, plus `oklch()` hues
@@ -76,15 +82,19 @@ check is unchanged: a genuine three-item `<ol>` still fires.
 
 Limits of the correlation: selector matching is approximate for
 compound selectors (`.a .b` counts when both classes occur somewhere,
-not necessarily nested), attribute selectors such as
-`[class*="step"]` are assumed used, CSS nesting (`&`) inside a rule
-body is not parsed, and a `var()` fallback containing parentheses is
-not expanded. Text extraction is unchanged: only `script`, `style`,
-`noscript`, `template`, `svg`, `canvas` and `iframe` are removed, so
-navigation menus, cookie banners and hidden modals are still mashed
-into the copy analysis as if they were prose. That is a known
-limitation — there is no visibility engine — not a claim that the
-copy text is clean prose.
+not necessarily nested), and a selector with no class, id, or type
+token it can check — a bare attribute selector such as
+`[data-label="a, b"]` — is not counted rather than assumed used.
+CSS nesting (`&`) inside a rule body is flattened into the enclosing
+selector, and a `var()` fallback containing parentheses is not
+expanded. Text extraction excludes hidden elements — `[hidden]`,
+`aria-hidden="true"`, and inline `display:none` /
+`visibility:hidden` — as well as `script`, `style`, `noscript`,
+`template`, `svg`, `canvas` and `iframe`, so hidden modals no longer
+reach the copy analysis. What is still mashed in as if it were prose:
+navigation menus and cookie banners that are visible on the page, and
+anything hidden only by a stylesheet class, which this check cannot
+see — there is still no visibility engine for those.
 
 ## Scoring
 
