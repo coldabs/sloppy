@@ -1,5 +1,4 @@
 import http from 'node:http'
-import net from 'node:net'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -211,52 +210,16 @@ if (isDev) {
   })
 }
 
-const assertLoopbackPortFree = async (port) => {
-  const hosts = ['127.0.0.1', '::1']
-
-  for (const host of hosts) {
-    await new Promise((resolve, reject) => {
-      const probe = net.createServer()
-      probe.once('error', (error) => {
-        if (error.code === 'EADDRNOTAVAIL') {
-          resolve()
-          return
-        }
-        if (error.code === 'EADDRINUSE') {
-          reject(
-            new Error(
-              `Port ${port} is already in use on ${host}. An old dev server is probably running. Stop it, then run npm run dev again.`,
-            ),
-          )
-          return
-        }
-        reject(error)
-      })
-      probe.once('listening', () => {
-        probe.close(() => resolve())
-      })
-      probe.listen(port, host)
-    })
-  }
-}
-
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
     console.error(
-      `Port ${port} is already in use. Stop the other server, then run npm run dev again.`,
+      `Port ${port} is already in use. An old dev server is probably running. Stop it, then run npm run dev again.`,
     )
   } else {
     console.error(error)
   }
   process.exit(1)
 })
-
-try {
-  await assertLoopbackPortFree(port)
-} catch (error) {
-  console.error(error.message)
-  process.exit(1)
-}
 
 server.listen(port, '127.0.0.1', () => {
   const mode = isDev ? 'dev' : 'production'
