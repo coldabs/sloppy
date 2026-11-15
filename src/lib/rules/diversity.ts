@@ -145,6 +145,161 @@ const STOPWORDS = new Set([
   'does', 'did', 'have', 'has', 'had', 'am', 'an',
 ])
 
+interface SentenceLength {
+  start: number
+  end: number
+  words: number
+  formal: boolean
+}
+
+const sentenceLengths = (text: string): SentenceLength[] =>
+  sentenceSpans(text).map((span) => {
+    const body = text.slice(span.start, span.end)
+    return {
+      ...span,
+      words: countWordsIn(body),
+      formal: isFormalSentence(body),
+    }
+  })
+
+// The longest run of consecutive non-formal sentences whose lengths
+// stay within maxSpread words of each other, at least minRun long.
+// A run is broken by a formal sentence, a sentence under three
+// words, or a length outside the run's spread — the same shape as
+// same-length-sentences' runs, but the longest one, so the span
+// locates the flat passage instead of the whole document (F25).
+const longestLengthRun = (
+  sentences: SentenceLength[],
+  maxSpread: number,
+  minRun: number,
+): RawMatch | null => {
+  let best: SentenceLength[] = []
+  let run: SentenceLength[] = []
+  let runMin = 0
+  let runMax = 0
+  const flush = () => {
+    if (run.length >= minRun && run.length > best.length) best = run
+    run = []
+  }
+  for (const sentence of sentences) {
+    if (sentence.formal || sentence.words < 3) {
+      flush()
+      continue
+    }
+    if (run.length === 0) {
+      run = [sentence]
+      runMin = sentence.words
+      runMax = sentence.words
+      continue
+    }
+    const nextMin = Math.min(runMin, sentence.words)
+    const nextMax = Math.max(runMax, sentence.words)
+    if (nextMax - nextMin > maxSpread) {
+      flush()
+      run = [sentence]
+      runMin = sentence.words
+      runMax = sentence.words
+      continue
+    }
+    run.push(sentence)
+    runMin = nextMin
+    runMax = nextMax
+  }
+  flush()
+  return best.length === 0
+    ? null
+    : { start: best[0].start, end: best[best.length - 1].end }
+}
+
+// The longest run of consecutive non-formal sentences whose lengths
+// strictly alternate between two values at least two words apart —
+// 15, 21, 15, 21 — at least minRun long. A rigid alternation is a
+// flat rhythm the CV misses: the two lengths average out, so the
+// variance looks ordinary while the cadence is mechanical (F25).
+// Clean human text on the P2 corpus measures CV 0.17–0.35 with
+// varied lengths; an exact alternation sustained for ten sentences
+// does not occur in it. The threshold is deliberately not lowered
+// to catch it — widening it to 0.167 would flag clean text.
+const longestAlternatingRun = (
+  sentences: SentenceLength[],
+  minRun: number,
+): { start: number; end: number; gap: number; mean: number } | null => {
+  interface Run {
+    sentences: SentenceLength[]
+    first: number
+    second: number
+  }
+  // A holder, not a plain variable: the best run is assigned inside
+  // the flush closure, and TypeScript narrows a closure-mutated
+  // `Run | null` to `never` after the null check.
+  const bestHolder: { run: Run | null } = { run: null }
+  let run: SentenceLength[] = []
+  // The two alternating values, in order; meaningful once the run
+  // has two sentences.
+  let first = 0
+  let second = 0
+  const flush = () => {
+    if (
+      run.length >= minRun &&
+      (!bestHolder.run || run.length > bestHolder.run.sentences.length)
+    ) {
+      bestHolder.run = { sentences: run, first, second }
+    }
+    run = []
+  }
+  for (const sentence of sentences) {
+    if (sentence.formal || sentence.words < 3) {
+      flush()
+      continue
+    }
+    if (run.length === 0) {
+      run = [sentence]
+      continue
+    }
+    if (run.length === 1) {
+      const gap = Math.abs(sentence.words - run[0].words)
+      if (gap < 2) {
+        // Not an alternation — restart the run here.
+        run = [sentence]
+        continue
+      }
+      first = run[0].words
+      second = sentence.words
+      run.push(sentence)
+      continue
+    }
+    const expected = run.length % 2 === 0 ? first : second
+    if (sentence.words !== expected) {
+      // The alternation breaks. The current sentence may start a new
+      // run with the previous one.
+      const prev = run[run.length - 1]
+      const gap = Math.abs(sentence.words - prev.words)
+      if (gap >= 2) {
+        run = [prev, sentence]
+        first = prev.words
+        second = sentence.words
+      } else {
+        run = [sentence]
+      }
+      continue
+    }
+    run.push(sentence)
+  }
+  flush()
+  const best = bestHolder.run
+  if (!best) return null
+  const gap = Math.abs(best.first - best.second)
+  const mean =
+    best.sentences.reduce((sum, s) => sum + s.words, 0) /
+    best.sentences.length
+  return {
+    start: best.sentences[0].start,
+    end: best.sentences[best.sentences.length - 1].end,
+    gap,
+    mean,
+  }
+}
+
 // Burstiness and type-token ratio, shared by the scan and the
 // penalty: the scan decides whether the signal fires, the penalty
 // scales with how far past the threshold the measurement sits.
@@ -155,12 +310,40 @@ const burstinessScan = (text: string): RawMatch[] => {
   const { value, sentences, mean } = burstinessOf(clean)
   if (
     sentences < BURSTINESS_MIN_SENTENCES ||
-    mean >= BURSTINESS_MAX_MEAN_LENGTH ||
-    value >= BURSTINESS_THRESHOLD
+    mean >= BURSTINESS_MAX_MEAN_LENGTH
   ) {
     return []
   }
-  return [{ start: 0, end: text.length }]
+  const lengths = sentenceLengths(text)
+  const matches: RawMatch[] = []
+  // A flat rhythm: the CV fires, and the span is the longest run of
+  // near-identical sentences — the flat passage — not the whole
+  // document (F25). When the whole text is the run, the span is the
+  // whole text, and that is correct: the signal is everywhere.
+  if (value < BURSTINESS_THRESHOLD) {
+    matches.push(
+      longestLengthRun(lengths, 2, 4) ?? { start: 0, end: text.length },
+    )
+  }
+  // A rigid alternation: two lengths repeating exactly. The CV
+  // averages the pair out, so the alternation escapes the threshold
+  // above — it is a pattern-detection gap, not a threshold gap, and
+  // the threshold is not widened to catch it.
+  const alternating = longestAlternatingRun(
+    lengths,
+    BURSTINESS_MIN_SENTENCES,
+  )
+  if (alternating) {
+    const span = { start: alternating.start, end: alternating.end }
+    if (
+      !matches.some(
+        (other) => span.start < other.end && other.start < span.end,
+      )
+    ) {
+      matches.push(span)
+    }
+  }
+  return matches
 }
 
 const burstinessPenalty = (
@@ -169,7 +352,16 @@ const burstinessPenalty = (
   text: string,
 ): number => {
   const { value } = burstinessOf(stripFormalSentences(text))
-  const depth = (BURSTINESS_THRESHOLD - value) / BURSTINESS_THRESHOLD
+  const cvDepth = (BURSTINESS_THRESHOLD - value) / BURSTINESS_THRESHOLD
+  // An exact alternation sustained for ten sentences is a maximally
+  // flat rhythm: the pattern is either present (rigid) or absent,
+  // so its depth is 1, the same as a perfectly uniform run. The
+  // stronger of the two signals sets the penalty; they never stack.
+  const alternating = longestAlternatingRun(
+    sentenceLengths(text),
+    BURSTINESS_MIN_SENTENCES,
+  )
+  const depth = Math.max(cvDepth, alternating ? 1 : 0)
   return severityWeight.low * 2.5 * Math.max(0, Math.min(1, depth))
 }
 
@@ -186,13 +378,71 @@ const burstinessPenalty = (
 // a missed repetition.
 export const MATTR_THRESHOLD = 0.6
 
+// The 100-word window with the lowest type-token ratio — the most
+// repetitive passage (F25). Tokens in formal sentences are dropped,
+// the way repeated-bigrams drops them, so the window is measured on
+// the same words MATTR is. A text shorter than one window is a
+// single window, so the span is the whole text.
+const lowestMattrWindow = (text: string): RawMatch => {
+  const spans = sentenceSpans(text)
+  const formalSentences = new Set<number>()
+  spans.forEach((span, index) => {
+    if (isFormalSentence(text.slice(span.start, span.end))) {
+      formalSentences.add(index)
+    }
+  })
+  const tokens: Array<{ word: string; start: number; end: number }> = []
+  for (const match of text.matchAll(/[\p{L}\p{N}'’]+/gu)) {
+    const start = match.index ?? 0
+    if (formalSentences.has(sentenceIndexAt(spans, start))) continue
+    tokens.push({
+      word: (match[0] ?? '').toLowerCase(),
+      start,
+      end: start + (match[0] ?? '').length,
+    })
+  }
+  if (tokens.length <= MATTR_WINDOW_WORDS) {
+    return { start: 0, end: text.length }
+  }
+  const counts = new Map<string, number>()
+  let distinct = 0
+  const add = (word: string): void => {
+    const next = (counts.get(word) ?? 0) + 1
+    counts.set(word, next)
+    if (next === 1) distinct += 1
+  }
+  const remove = (word: string): void => {
+    const next = (counts.get(word) ?? 0) - 1
+    if (next <= 0) {
+      counts.delete(word)
+      distinct -= 1
+    } else {
+      counts.set(word, next)
+    }
+  }
+  for (let i = 0; i < MATTR_WINDOW_WORDS; i += 1) add(tokens[i].word)
+  let bestStart = 0
+  let bestTtr = distinct / MATTR_WINDOW_WORDS
+  for (let i = MATTR_WINDOW_WORDS; i < tokens.length; i += 1) {
+    remove(tokens[i - MATTR_WINDOW_WORDS].word)
+    add(tokens[i].word)
+    const ttr = distinct / MATTR_WINDOW_WORDS
+    if (ttr < bestTtr) {
+      bestTtr = ttr
+      bestStart = i - MATTR_WINDOW_WORDS + 1
+    }
+  }
+  return {
+    start: tokens[bestStart].start,
+    end: tokens[bestStart + MATTR_WINDOW_WORDS - 1].end,
+  }
+}
+
 const lowTtrScan = (text: string): RawMatch[] => {
   const clean = stripFormalSentences(text)
   const words = countWordsIn(clean)
   if (words < TTR_MIN_WORDS) return []
-  return mattrOf(clean) < MATTR_THRESHOLD
-    ? [{ start: 0, end: text.length }]
-    : []
+  return mattrOf(clean) < MATTR_THRESHOLD ? [lowestMattrWindow(text)] : []
 }
 
 const lowTtrPenalty = (
