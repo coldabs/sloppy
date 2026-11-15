@@ -26,8 +26,11 @@ with the real `analyze()` and reports:
   (`grey` excluded): flagged means score < 90. Reported for all, dev,
   and test splits. **CI gates: test-split precision ≥ 0.85 and
   recall ≥ 0.60** — the run fails below either.
-- **Grey-zone agreement**: how many `grey` entries land in 70–89
-  (reported, no gate).
+- **Grey-zone agreement**: how many `grey` entries land in 70–89.
+  **CI gate (F28 calibration): all of them** — the grey zone is
+  the metric that discriminates the scoring constants, so a change
+  that pushes a grey entry out of its band fails the bench (see
+  `bench/CALIBRATION.md`).
 - **Per-rule precision**: for each rule, the share of its firings that
   land on slop-labelled entries (diagnostic, no gate — a rule firing
   mostly on clean entries is noise, not signal).
@@ -57,6 +60,7 @@ editing a label to make the engine pass.
 - **Deliberate label changes** (with a note, never silent):
   - 2026-11-15 (F20): `C28` `clean` → `grey`. The probe was pinned `clean` only because the testimonial cliche ("I love this product so much") was missed at 100; the F20 fix now flags it (score 70, in the grey zone), and the stress-test band was re-pinned `clean` → `mostly` in the same change.
   - 2026-11-15 (F21): `A12`, `C10`, `C13b`, `C19`, `C28`, `C32` `grey` → `slop`, and `C11` `clean` → `grey`. The floor is now the draft's own length, so the same hits score lower (A12 62, C10 64, C13b 65, C19 65, C28 53, C32 53) and the stress-test bands were re-pinned `mostly` → `slop` in the same change; C11 moved 90 → 89 on the 0.15/0.85 blend, one point across the clean boundary, and its band was re-pinned `clean` → `mostly`.
+  - 2026-11-15 (F33): `B10` `grey` → `clean`. The German probe was pinned `grey` only because same-length-sentences flagged it (score 85); non-English drafts are no longer judged on sentence rhythm, so it scores 100, and the stress-test band was re-pinned `mostly` → `clean` in the same change. The grey set is now 7 entries (B10 removed); `bench/CALIBRATION.md` was re-swept for the new set.
 - **Too short to score**: entries under `MIN_SCORE_WORDS` (8 words) have no meaningful score, so the bench excludes them from every metric and reports them as skipped (7 of 131: B20, B35, D03, D04, D05, D11, D12). Their labels stay in the frozen corpus but are inert.
 - **Adding entries**: append new lines with a fresh id, a label, and
   a split (keep the 70/30 balance roughly). Record the addition here.
