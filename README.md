@@ -8,6 +8,24 @@ There is no language model. The scan is a fixed list of patterns, CSS signals,
 and visible weights with a visible formula, so the same input always gets the
 same score, and every score can be explained.
 
+Try it live: https://sloppyabs.netlify.app — no install, no account, nothing uploaded.
+
+![sloppy in the browser](docs/screenshot.png)
+
+Sample output — the built-in sloppy example, 58 words (trimmed; the full
+result lists every finding with its rule and fix):
+
+```json
+{
+  "score": 9,
+  "verdict": "Industrial slop",
+  "hits": 13,
+  "rulesHit": 6,
+  "words": 58,
+  "counts": { "high": 2, "medium": 10, "low": 1 }
+}
+```
+
 ## Contents
 
 - [Why this exists](#why-this-exists)
@@ -41,7 +59,7 @@ Trust your ear over the score.
 
 ### Copy
 
-Paste a landing page, a launch post, or any text. The scanner runs twenty-eight
+Paste a landing page, a launch post, or any text. The scanner runs 29
 rules over the draft and marks each hit in place.
 
 | Group | What it looks for |
