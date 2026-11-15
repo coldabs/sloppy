@@ -67,13 +67,61 @@ const sliceForDisplay = (hits: SiteHit[], cap: number): SiteHit[] => {
   return shown
 }
 
+const HIDDEN_TEXT_TAGS = new Set([
+  'script',
+  'style',
+  'noscript',
+  'template',
+  'svg',
+  'canvas',
+  'iframe',
+])
+
+// Whether an element hides its subtree from a reader: the `hidden`
+// attribute, aria-hidden, or an inline display:none /
+// visibility:hidden (F38). Class-based hiding cannot be judged
+// without a visibility engine — a stylesheet's `.hidden` is not
+// visible to this check, and that limit is stated in METHOD.md.
+const isHiddenElement = (element: Element): boolean => {
+  if (element.hasAttribute('hidden')) return true
+  if (element.getAttribute('aria-hidden') === 'true') return true
+  for (const decl of declarationsOf(element.getAttribute('style') ?? '')) {
+    if (decl.property === 'display' && decl.value === 'none') return true
+    if (
+      decl.property === 'visibility' &&
+      (decl.value === 'hidden' || decl.value === 'collapse')
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
 const visibleText = (doc: Document) => {
   if (!doc.body) return ''
-  const clone = doc.body.cloneNode(true) as HTMLElement
-  clone
-    .querySelectorAll('script, style, noscript, template, svg, canvas, iframe')
-    .forEach((node) => node.remove())
-  return collapse(clone.textContent ?? '')
+  // Walk the tree instead of cloning it (F38): a hidden subtree is
+  // skipped at its root, so hidden modals, cookie banners, and
+  // off-screen boilerplate never reach the copy analysis. Text nodes
+  // join with no separator, exactly like the textContent the old
+  // clone produced, so visible copy counts identically.
+  const parts: string[] = []
+  const walk = (node: Node): void => {
+    if (node.nodeType === 3) {
+      parts.push(node.textContent ?? '')
+      return
+    }
+    if (node.nodeType !== 1) return
+    const element = node as Element
+    if (
+      HIDDEN_TEXT_TAGS.has(element.tagName.toLowerCase()) ||
+      isHiddenElement(element)
+    ) {
+      return
+    }
+    for (const child of Array.from(element.childNodes)) walk(child)
+  }
+  walk(doc.body)
+  return collapse(parts.join(''))
 }
 
 const accessibleName = (doc: Document, element: Element) => {
